@@ -64,8 +64,8 @@ export default function ProfileScreen() {
             </View>
             <View style={styles.memberDetails}>
               <Text style={[styles.memberName, { color: theme.textPrimary }]}>John Doe</Text>
-              <Text style={[styles.memberRelation, { color: theme.textSecondary }]}>Son • Primary Caretaker</Text>
-              <Text style={[styles.memberContact, { color: theme.textSecondary }]}>+1 (555) 123-4567</Text>
+              <Text style={[styles.memberRelation, { color: theme.textSecondary }]}>Father • Guardian360 user 1</Text>
+              <Text style={[styles.memberContact, { color: theme.textSecondary }]}>+91 1234567890</Text>
             </View>
             <TouchableOpacity style={styles.memberAction}>
               <Feather name="more-vertical" size={20} color={theme.textSecondary} />
@@ -80,8 +80,8 @@ export default function ProfileScreen() {
             </View>
             <View style={styles.memberDetails}>
               <Text style={[styles.memberName, { color: theme.textPrimary }]}>Sarah Doe</Text>
-              <Text style={[styles.memberRelation, { color: theme.textSecondary }]}>Daughter</Text>
-              <Text style={[styles.memberContact, { color: theme.textSecondary }]}>+1 (555) 987-6543</Text>
+              <Text style={[styles.memberRelation, { color: theme.textSecondary }]}>Mother • Guardian360 user 2</Text>
+              <Text style={[styles.memberContact, { color: theme.textSecondary }]}>+91 9876543210</Text>
             </View>
             <TouchableOpacity style={styles.memberAction}>
               <Feather name="more-vertical" size={20} color={theme.textSecondary} />

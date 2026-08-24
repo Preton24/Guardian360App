@@ -127,7 +127,7 @@ export default function HomeScreen() {
                 <Text style={styles.caretakerInitials}>JD</Text>
               </View>
               <View>
-                <Text style={[styles.caretakerRole, { color: theme.textSecondary }]}>Primary Caretaker</Text>
+                <Text style={[styles.caretakerRole, { color: theme.textSecondary }]}>Guardian360 user</Text>
                 <Text style={[styles.caretakerName, { color: theme.textPrimary }]}>Jane Doe</Text>
               </View>
             </View>
@@ -135,67 +135,6 @@ export default function HomeScreen() {
               <Feather name="phone" size={20} color={theme.successText} />
             </View>
           </TouchableOpacity>
-        </Animated.View>
-
-        {/* Wellness Section */}
-        <Animated.View entering={FadeInUp.delay(800).duration(800)} style={styles.section}>
-          <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>Wellness & Relaxation</Text>
-          
-          {/* Quotes Card */}
-          <View style={[styles.wellnessCard, { backgroundColor: theme.cardBg, borderColor: theme.border }]}>
-            <View style={styles.wellnessIcon}>
-              <Feather name="book-open" size={24} color="#8B5CF6" />
-            </View>
-            <View style={styles.wellnessInfo}>
-              <Text style={[styles.wellnessTitle, { color: theme.textPrimary }]}>Daily Inspiration</Text>
-              <Text style={[styles.wellnessDesc, { color: theme.textSecondary }]}>"Every moment is a fresh beginning."</Text>
-            </View>
-          </View>
-
-          {/* Music Card */}
-          <View style={[styles.wellnessCard, { backgroundColor: theme.cardBg, borderColor: theme.border }]}>
-            <View style={[styles.wellnessIcon, { backgroundColor: 'rgba(14, 165, 233, 0.1)' }]}>
-              <Feather name="music" size={24} color="#0EA5E9" />
-            </View>
-            <View style={styles.wellnessInfo}>
-              <Text style={[styles.wellnessTitle, { color: theme.textPrimary }]}>Calm Soothing Music</Text>
-              <Text style={[styles.wellnessDesc, { color: theme.textSecondary }]}>Relaxing nature sounds</Text>
-            </View>
-            <TouchableOpacity style={styles.playButton}>
-              <Ionicons name="play-circle" size={40} color={theme.accent} />
-            </TouchableOpacity>
-          </View>
-
-          <View style={{ height: 40 }} />
-        </Animated.View>
-
-        {/* Articles Section */}
-        <Animated.View entering={FadeInUp.delay(700).duration(800)} style={styles.section}>
-          <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>Articles & Tips</Text>
-          
-          <View style={[styles.articleCard, { backgroundColor: theme.cardBg, borderColor: theme.border }]}>
-            <Image 
-              source={{ uri: 'https://images.unsplash.com/photo-1573497620053-ea5300f94f21?q=80&w=600&auto=format&fit=crop' }} 
-              style={styles.articleImage} 
-              contentFit="cover"
-            />
-            <View style={styles.articleContent}>
-              <Text style={[styles.articleTitle, { color: theme.textPrimary }]} numberOfLines={1}>Staying Active at Home</Text>
-              <Text style={[styles.articleDesc, { color: theme.textSecondary }]} numberOfLines={1}>Simple exercises to keep you moving safely indoors.</Text>
-            </View>
-          </View>
-
-          <View style={[styles.articleCard, { backgroundColor: theme.cardBg, borderColor: theme.border }]}>
-            <Image 
-              source={{ uri: 'https://images.unsplash.com/photo-1505576399279-565b52d4ac71?q=80&w=600&auto=format&fit=crop' }} 
-              style={styles.articleImage} 
-              contentFit="cover"
-            />
-            <View style={styles.articleContent}>
-              <Text style={[styles.articleTitle, { color: theme.textPrimary }]} numberOfLines={1}>Healthy Heart Habits</Text>
-              <Text style={[styles.articleDesc, { color: theme.textSecondary }]} numberOfLines={1}>Diet and lifestyle tips for better cardiovascular health.</Text>
-            </View>
-          </View>
         </Animated.View>
         
       </ScrollView>
