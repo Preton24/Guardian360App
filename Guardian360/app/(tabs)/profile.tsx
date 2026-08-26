@@ -11,13 +11,13 @@ export default function ProfileScreen() {
   const { theme: currentThemeMode, setTheme } = useTheme();
 
   const theme = {
-    background: isDark ? '#0F172A' : '#F8FAFC',
-    cardBg: isDark ? '#1E293B' : '#FFFFFF',
-    textPrimary: isDark ? '#F8FAFC' : '#0F172A',
-    textSecondary: isDark ? '#94A3B8' : '#64748B',
-    accent: isDark ? '#38BDF8' : '#0EA5E9',
-    border: isDark ? '#334155' : '#E2E8F0',
-    danger: '#EF4444',
+    background: isDark ? '#000000' : '#F2F2F7',
+    cardBg: isDark ? '#1C1C1E' : '#FFFFFF',
+    textPrimary: isDark ? '#FFFFFF' : '#000000',
+    textSecondary: isDark ? '#8E8E93' : '#8E8E93',
+    accent: '#007AFF',
+    border: isDark ? '#38383A' : '#C6C6C8',
+    danger: '#FF3B30',
   };
 
   return (

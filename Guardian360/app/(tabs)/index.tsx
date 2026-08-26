@@ -13,14 +13,16 @@ export default function HomeScreen() {
   const isDark = colorScheme === 'dark';
 
   const theme = {
-    background: isDark ? '#0F172A' : '#F8FAFC',
-    cardBg: isDark ? '#1E293B' : '#FFFFFF',
-    textPrimary: isDark ? '#F8FAFC' : '#0F172A',
-    textSecondary: isDark ? '#94A3B8' : '#64748B',
-    accent: isDark ? '#38BDF8' : '#0EA5E9',
-    successBg: isDark ? 'rgba(34, 197, 94, 0.2)' : '#DCFCE7',
-    successText: isDark ? '#4ADE80' : '#166534',
-    border: isDark ? '#334155' : '#E2E8F0',
+    background: isDark ? '#000000' : '#F2F2F7',
+    cardBg: isDark ? '#1C1C1E' : '#FFFFFF',
+    textPrimary: isDark ? '#FFFFFF' : '#000000',
+    textSecondary: isDark ? '#8E8E93' : '#8E8E93',
+    accent: '#007AFF',
+    border: isDark ? '#38383A' : '#C6C6C8',
+    successBg: 'rgba(52, 199, 89, 0.1)',
+    successText: '#34C759',
+    alertBg: 'rgba(255, 59, 48, 0.1)',
+    alertText: '#FF3B30',
   };
 
   return (
@@ -136,7 +138,8 @@ export default function HomeScreen() {
             </View>
           </TouchableOpacity>
         </Animated.View>
-        
+
+        <View style={{ height: 100 }} />
       </ScrollView>
     </View>
   );

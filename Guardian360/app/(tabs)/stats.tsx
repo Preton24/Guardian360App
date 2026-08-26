@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Dimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather, MaterialCommunityIcons, FontAwesome5 } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useTheme } from '@/context/ThemeContext';
 
@@ -16,6 +17,7 @@ const routines = [
 ];
 
 export default function StatsScreen() {
+  const router = useRouter();
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
   const { activeTheme } = useTheme();
@@ -23,19 +25,19 @@ export default function StatsScreen() {
   const [activeRoutine, setActiveRoutine] = useState('all');
 
   const theme = {
-    background: isDark ? '#0F172A' : '#F9FAFB',
-    cardBg: isDark ? '#1E293B' : '#FFFFFF',
-    textPrimary: isDark ? '#F8FAFC' : '#111827',
-    textSecondary: isDark ? '#94A3B8' : '#6B7280',
-    primary: '#FF477E', // pinkish-red from mockup
-    primaryLight: 'rgba(255, 71, 126, 0.1)',
-    border: isDark ? '#334155' : '#F3F4F6',
-    calendarDay: isDark ? '#F8FAFC' : '#374151',
-    calendarMuted: isDark ? '#475569' : '#D1D5DB',
-    orange: '#F59E0B',
-    blue: '#3B82F6',
-    teal: '#10B981',
-    purple: '#8B5CF6',
+    background: isDark ? '#000000' : '#F2F2F7',
+    cardBg: isDark ? '#1C1C1E' : '#FFFFFF',
+    textPrimary: isDark ? '#FFFFFF' : '#000000',
+    textSecondary: isDark ? '#8E8E93' : '#8E8E93',
+    primary: '#FF2D55', // Apple Pink/Red
+    primaryLight: 'rgba(255, 45, 85, 0.1)',
+    border: isDark ? '#38383A' : '#C6C6C8',
+    calendarDay: isDark ? '#FFFFFF' : '#000000',
+    calendarMuted: isDark ? '#48484A' : '#C7C7CC',
+    orange: '#FF9500',
+    blue: '#007AFF',
+    teal: '#34C759',
+    purple: '#AF52DE',
   };
 
   const currentRoutineObj = routines.find(r => r.id === activeRoutine) || routines[0];
@@ -133,9 +135,6 @@ export default function StatsScreen() {
       
       {/* Top Header */}
       <View style={styles.header}>
-        <TouchableOpacity style={[styles.iconButton, { backgroundColor: theme.primaryLight }]}>
-          <Feather name="menu" size={20} color={theme.primary} />
-        </TouchableOpacity>
         
         <TouchableOpacity style={styles.titleDropdown}>
            {currentRoutineObj.type === 'material' ? (
@@ -144,10 +143,12 @@ export default function StatsScreen() {
              <FontAwesome5 name={currentRoutineObj.icon} size={18} color={theme.primary} />
            )}
            <Text style={[styles.headerTitle, { color: theme.textPrimary }]}>{currentRoutineObj.title}</Text>
-           <Feather name="chevron-down" size={20} color={theme.textSecondary} />
         </TouchableOpacity>
 
-        <TouchableOpacity style={[styles.iconButton, { backgroundColor: theme.primaryLight }]}>
+        <TouchableOpacity 
+          style={[styles.iconButton, { backgroundColor: theme.primaryLight }]}
+          onPress={() => router.push('/new-reminder')}
+        >
           <Feather name="plus" size={20} color={theme.primary} />
         </TouchableOpacity>
       </View>
@@ -387,11 +388,6 @@ const styles = StyleSheet.create({
     borderRadius: 24,
     padding: 20,
     marginBottom: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
   },
   calendarHeader: {
     flexDirection: 'row',
@@ -553,11 +549,6 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     padding: 16,
     marginBottom: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
   },
   smallCardValue: {
     fontSize: 22,
