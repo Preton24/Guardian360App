@@ -1,102 +1,205 @@
-import { View, Text, StyleSheet, TouchableOpacity, Dimensions } from 'react-native';
-import { Image } from 'expo-image';
+import React, { useState, useEffect, useCallback } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, Dimensions, ScrollView } from 'react-native';
 import { Feather, Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import Animated, { FadeInDown } from 'react-native-reanimated';
+import { BlurView } from 'expo-blur';
+import MapView, { UrlTile, Marker } from 'react-native-maps';
 
 const { width } = Dimensions.get('window');
+
+// Mock Data
+const locationData = { latitude: 12.903269, longitude: 77.504899 };
+const mockFamilyMembers = [
+  { id: '1', name: 'Steve Roger', email: 'Steve Roger', details: 'College • 17 hr ago', address: 'JSS Academy of Technical Education, Bengaluru', distance: '15 km', location: { lat: 12.903269, lng: 77.504899 } },
+  { id: '2', name: 'Jane Doe', email: 'Jane Doe', details: 'Work • 2 hr ago', address: '42,8th C Main, Malleshwaram west, Bengaluru', distance: '12 km', location: { lat: 13.0092142, lng: 77.5578409 } },
+];
 
 export default function LocationScreen() {
   const router = useRouter();
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
 
+  const [familyMembers, setFamilyMembers] = useState(mockFamilyMembers);
+  const [isAddFamilyVisible, setIsAddFamilyVisible] = useState(false);
+  const [isViewingMyLocation, setIsViewingMyLocation] = useState(true);
+  const [selectedMember, setSelectedMember] = useState<any>(null);
+  
+  const [region, setRegion] = useState({
+      latitude: locationData.latitude,
+      longitude: locationData.longitude,
+      latitudeDelta: 0.01,
+      longitudeDelta: 0.01,
+  });
+
   const theme = {
-    background: isDark ? '#0F172A' : '#F8FAFC',
-    cardBg: isDark ? '#1E293B' : '#FFFFFF',
-    textPrimary: isDark ? '#F8FAFC' : '#0F172A',
-    textSecondary: isDark ? '#94A3B8' : '#64748B',
-    accent: isDark ? '#38BDF8' : '#0EA5E9',
-    border: isDark ? '#334155' : '#E2E8F0',
+    background: isDark ? '#000000' : '#F2F2F7',
+    cardBg: isDark ? '#1C1C1E' : '#FFFFFF',
+    textPrimary: isDark ? '#FFFFFF' : '#000000',
+    textSecondary: isDark ? '#8E8E93' : '#8E8E93',
+    accent: '#007AFF',
+    border: isDark ? '#38383A' : '#C6C6C8',
+    blurTint: isDark ? 'dark' : 'light' as any,
+  };
+
+  const focusLocation = (member: any) => {
+      setRegion({
+          latitude: member.location.lat,
+          longitude: member.location.lng,
+          latitudeDelta: 0.01,
+          longitudeDelta: 0.01,
+      });
+      setIsViewingMyLocation(false);
+      setSelectedMember(member);
+  };
+
+  const focusMyLocation = () => {
+      setRegion({
+          latitude: locationData.latitude,
+          longitude: locationData.longitude,
+          latitudeDelta: 0.01,
+          longitudeDelta: 0.01,
+      });
+      setIsViewingMyLocation(true);
+      setSelectedMember(null);
   };
 
   return (
     <View style={styles.container}>
-      {/* Mock Map Background */}
-      <Image
-        source={{
-          uri: isDark
-            ? 'https://images.unsplash.com/photo-1524661135-423995f22d0b?q=80&w=800&auto=format&fit=crop'
-            : 'https://images.unsplash.com/photo-1524661135-423995f22d0b?q=80&w=800&auto=format&fit=crop'
-        }}
+      {/* Interactive OpenStreetMap */}
+      <MapView
         style={StyleSheet.absoluteFillObject}
-        contentFit="cover"
-        opacity={0.7}
-      />  
+        region={region}
+        mapType="none" // Hide default maps
+      >
+        <UrlTile
+          urlTemplate="https://a.tile.openstreetmap.org/{z}/{x}/{y}.png"
+          maximumZ={19}
+          flipY={false}
+        />
+        {/* Render Family Member Markers */}
+        {familyMembers.map((member) => (
+          <Marker
+            key={member.id}
+            coordinate={{ latitude: member.location.lat, longitude: member.location.lng }}
+            title={member.name}
+          >
+             <View style={[styles.markerPin, { backgroundColor: theme.accent }]}>
+                <Ionicons name="person" size={20} color="#FFF" />
+             </View>
+          </Marker>
+        ))}
+      </MapView>
 
-      <SafeAreaView style={styles.safeArea}>
-        {/* Floating Header */}
+      <SafeAreaView style={styles.safeArea} pointerEvents="box-none" edges={['top']}>
+        {/* Floating Header Back Button */}
         <View style={styles.header}>
-          <TouchableOpacity onPress={() => router.back()} style={[styles.iconButton, { backgroundColor: theme.cardBg }]}>
-            <Feather name="arrow-left" size={24} color={theme.textPrimary} />
+          <TouchableOpacity onPress={() => router.back()} style={styles.iconButtonWrapper}>
+            <BlurView intensity={80} tint={theme.blurTint} style={styles.iconButton}>
+              <Feather name="arrow-left" size={24} color={theme.textPrimary} />
+            </BlurView>
           </TouchableOpacity>
         </View>
 
-        {/* Center Marker Mock */}
-        <View style={styles.markerContainer}>
-          <View style={[styles.markerPulse, { backgroundColor: theme.accent }]} />
-          <View style={[styles.markerPin, { backgroundColor: theme.accent }]}>
-            <Ionicons name="person" size={20} color="#FFF" />
-          </View>
-        </View>
+        {/* Back Button - Shows when viewing family member's location */}
+        {!isViewingMyLocation && (
+            <View style={styles.focusBackWrapper}>
+                <TouchableOpacity activeOpacity={0.8} onPress={focusMyLocation}>
+                    <BlurView intensity={80} tint={theme.blurTint} style={styles.iconButton}>
+                        <Feather name="crosshair" size={20} color={theme.accent} />
+                    </BlurView>
+                </TouchableOpacity>
+            </View>
+        )}
 
         <View style={{ flex: 1 }} />
 
-        {/* Bottom Info Card */}
-        <Animated.View entering={FadeInDown.delay(200).duration(500)} style={[styles.bottomCard, { backgroundColor: theme.cardBg }]}>
-          <View style={styles.dragHandleContainer}>
-            <View style={styles.dragHandle} />
-          </View>
+        {/* Bottom Sheet - People List */}
+        <View style={styles.bottomSheetContainer}>
+          <BlurView intensity={80} tint={isDark ? "dark" : "light"} style={styles.bottomSheet}>
+            <View style={styles.sheetDragHandle} />
+            
+            {selectedMember ? (
+              <View style={styles.detailView}>
+                <View style={styles.detailHeader}>
+                  <Text style={[styles.detailTitle, { color: theme.textPrimary }]} numberOfLines={2}>
+                    {selectedMember.email}
+                  </Text>
+                  <TouchableOpacity style={[styles.closeButton, { backgroundColor: isDark ? '#333' : '#E5E5EA' }]} onPress={() => setSelectedMember(null)}>
+                    <Feather name="x" size={20} color={theme.textPrimary} />
+                  </TouchableOpacity>
+                </View>
 
-          <View style={styles.userInfo}>
-            <View style={[styles.avatar, { backgroundColor: theme.accent }]}>
-              <Text style={styles.avatarText}>SR</Text>
-            </View>
-            <View style={styles.userDetails}>
-              <Text style={[styles.userName, { color: theme.textPrimary }]}>Steve Roger</Text>
-              <Text style={[styles.userStatus, { color: theme.textSecondary }]}>Near Home • Updated Just Now</Text>
-            </View>
-            <View style={styles.batteryBadge}>
-              <Ionicons name="battery-full" size={16} color="#10B981" />
-              <Text style={styles.batteryText}>85%</Text>
-            </View>
-          </View>
+                <View style={styles.locationInfo}>
+                  <Text style={[styles.locationTitle, { color: theme.textPrimary }]}>{selectedMember.details.split('•')[0].trim()}</Text>
+                  <Text style={[styles.locationAddress, { color: theme.textSecondary }]} numberOfLines={2}>
+                    {selectedMember.address}
+                  </Text>
+                  <Text style={styles.liveText}>Live</Text>
+                </View>
 
-          <View style={[styles.addressContainer, { borderTopColor: theme.border }]}>
-            <Feather name="map-pin" size={20} color={theme.textSecondary} />
-            <Text style={[styles.addressText, { color: theme.textPrimary }]}>
-              123 Maple Street, Springfield
-            </Text>
-          </View>
+                <View style={styles.actionGrid}>
+                  <TouchableOpacity style={[styles.actionCard, { backgroundColor: isDark ? '#2C2C2E' : '#F2F2F7' }]}>
+                    <View style={styles.actionIconBgContact}>
+                      <Ionicons name="person" size={20} color="#D97757" />
+                    </View>
+                    <View>
+                      <Text style={[styles.actionCardTitle, { color: theme.textPrimary }]}>Contact</Text>
+                      <Text style={[styles.actionCardSubtitle, { color: theme.textSecondary }]}>Info</Text>
+                    </View>
+                  </TouchableOpacity>
+                  
+                  <TouchableOpacity style={[styles.actionCard, { backgroundColor: isDark ? '#2C2C2E' : '#F2F2F7' }]}>
+                    <View style={styles.actionIconBgDirections}>
+                      <Ionicons name="arrow-undo" size={20} color="#FFFFFF" style={{ transform: [{ rotateY: '180deg' }, { rotateZ: '-45deg' }] }} />
+                    </View>
+                    <View>
+                      <Text style={[styles.actionCardTitle, { color: theme.textPrimary }]}>Directions</Text>
+                      <Text style={[styles.actionCardSubtitle, { color: theme.textSecondary }]}>{selectedMember.distance}</Text>
+                    </View>
+                  </TouchableOpacity>
+                </View>
 
-          <View style={styles.actionButtons}>
-            <TouchableOpacity style={[styles.actionBtn, { backgroundColor: theme.accent }]}>
-              <Feather name="navigation" size={20} color="#FFF" />
-              <Text style={styles.actionBtnText}>Directions</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={[styles.actionBtn, { backgroundColor: isDark ? '#334155' : '#F1F5F9' }]}>
-              <Feather name="bell" size={20} color={theme.textPrimary} />
-              <Text style={[styles.actionBtnTextSecondary, { color: theme.textPrimary }]}>Notify</Text>
-            </TouchableOpacity>
-          </View>
+                <TouchableOpacity style={[styles.notificationCard, { backgroundColor: isDark ? '#2C2C2E' : '#F2F2F7' }]}>
+                  <View style={styles.actionIconBgNotification}>
+                    <Ionicons name="notifications" size={20} color="#FFFFFF" />
+                  </View>
+                  <Text style={[styles.actionCardTitle, { color: theme.textPrimary, marginLeft: 16 }]}>Notifications</Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <>
+                <View style={styles.sheetHeader}>
+                  <Text style={[styles.sheetTitle, { color: theme.textPrimary }]}>People</Text>
+                  <TouchableOpacity style={[styles.addButton, { backgroundColor: isDark ? '#2C2C2E' : '#E5E5EA' }]} onPress={() => setIsAddFamilyVisible(true)}>
+                    <Feather name="plus" size={20} color={theme.textPrimary} />
+                  </TouchableOpacity>
+                </View>
 
-          <TouchableOpacity style={[styles.addFamilyBtn, { borderColor: theme.border }]}>
-            <Feather name="user-plus" size={20} color={theme.accent} />
-            <Text style={[styles.addFamilyText, { color: theme.accent }]}>Add Family Member</Text>
-          </TouchableOpacity>
-        </Animated.View>
+                <ScrollView style={styles.peopleList} contentContainerStyle={styles.peopleListContent}>
+                  {familyMembers.map((member) => (
+                    <TouchableOpacity
+                      key={member.id}
+                      style={styles.personRow}
+                      onPress={() => focusLocation(member)}
+                      activeOpacity={0.7}
+                    >
+                      <View style={[styles.personAvatar, { backgroundColor: isDark ? '#48484A' : '#C7C7CC' }]}>
+                        <Ionicons name="person" size={24} color="#FFFFFF" />
+                      </View>
+                      <View style={styles.personInfo}>
+                        <Text style={[styles.personName, { color: theme.textPrimary }]} numberOfLines={1}>{member.email}</Text>
+                        <Text style={[styles.personDetails, { color: theme.textSecondary }]}>{member.details}</Text>
+                      </View>
+                      <Text style={[styles.personDistance, { color: theme.textSecondary }]}>{member.distance}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              </>
+            )}
+          </BlurView>
+        </View>
       </SafeAreaView>
     </View>
   );
@@ -111,168 +214,211 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingHorizontal: 20,
+    paddingHorizontal: 16,
     paddingTop: 16,
     zIndex: 10,
   },
+  iconButtonWrapper: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    overflow: 'hidden',
+  },
   iconButton: {
+    width: '100%',
+    height: '100%',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  focusBackWrapper: {
+    position: 'absolute',
+    top: 140,
+    left: 16,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    overflow: 'hidden',
+  },
+  bottomSheetContainer: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    borderTopLeftRadius: 32,
+    borderTopRightRadius: 32,
+    overflow: 'hidden', // to clip the BlurView
+  },
+  bottomSheet: {
+    paddingTop: 12,
+    paddingHorizontal: 20,
+    paddingBottom: 40, // space for tab bar
+  },
+  sheetDragHandle: {
+    width: 36,
+    height: 5,
+    borderRadius: 2.5,
+    backgroundColor: '#8E8E93',
+    alignSelf: 'center',
+    marginBottom: 16,
+    opacity: 0.5,
+  },
+  sheetHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  sheetTitle: {
+    fontSize: 28,
+    fontWeight: '700',
+  },
+  addButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  peopleList: {
+    maxHeight: 250, // limit height so it doesn't take over screen
+  },
+  peopleListContent: {
+    paddingBottom: 20,
+  },
+  personRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: 'rgba(142, 142, 147, 0.3)',
+  },
+  personAvatar: {
     width: 48,
     height: 48,
     borderRadius: 24,
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 4,
+    marginRight: 12,
   },
-  markerContainer: {
-    position: 'absolute',
-    top: '40%',
-    left: '50%',
-    marginLeft: -24, // half of width
-    marginTop: -24,
-    alignItems: 'center',
-    justifyContent: 'center',
-    width: 48,
-    height: 48,
-  },
-  markerPulse: {
-    position: 'absolute',
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    opacity: 0.3,
-  },
-  markerPin: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 3,
-    borderColor: '#FFF',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    elevation: 5,
-  },
-  bottomCard: {
-    borderTopLeftRadius: 32,
-    borderTopRightRadius: 32,
-    padding: 24,
-    paddingTop: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: -4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 12,
-    elevation: 10,
-  },
-  dragHandleContainer: {
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  dragHandle: {
-    width: 40,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: '#CBD5E1',
-  },
-  userInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 24,
-  },
-  avatar: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 16,
-  },
-  avatarText: {
-    color: '#FFF',
-    fontSize: 20,
-    fontWeight: '700',
-  },
-  userDetails: {
+  personInfo: {
     flex: 1,
+    justifyContent: 'center',
   },
-  userName: {
-    fontSize: 22,
-    fontWeight: '700',
-    marginBottom: 4,
-  },
-  userStatus: {
-    fontSize: 14,
-  },
-  batteryBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(16, 185, 129, 0.1)',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
-  },
-  batteryText: {
-    color: '#10B981',
-    fontWeight: '600',
-    fontSize: 12,
-    marginLeft: 4,
-  },
-  addressContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderTopWidth: 1,
-    paddingTop: 20,
-    marginBottom: 24,
-  },
-  addressText: {
+  personName: {
     fontSize: 16,
     fontWeight: '500',
+    marginBottom: 4,
+  },
+  personDetails: {
+    fontSize: 13,
+  },
+  personDistance: {
+    fontSize: 14,
     marginLeft: 12,
   },
-  actionButtons: {
+  detailView: {
+    width: '100%',
+  },
+  detailHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 20,
+  },
+  detailTitle: {
+    fontSize: 24,
+    fontWeight: '700',
+    flex: 1,
+    marginRight: 16,
+  },
+  closeButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  locationInfo: {
+    marginBottom: 24,
+  },
+  locationTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    marginBottom: 4,
+  },
+  locationAddress: {
+    fontSize: 15,
+    marginBottom: 6,
+    lineHeight: 20,
+  },
+  liveText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#34C759',
+  },
+  actionGrid: {
     flexDirection: 'row',
     gap: 12,
+    marginBottom: 12,
   },
-  actionBtn: {
+  actionCard: {
     flex: 1,
-    flexDirection: 'row',
+    borderRadius: 16,
+    padding: 16,
+    height: 120,
+    justifyContent: 'space-between',
+  },
+  actionIconBgContact: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(217, 119, 87, 0.2)',
     justifyContent: 'center',
     alignItems: 'center',
-    paddingVertical: 16,
-    borderRadius: 16,
   },
-  actionBtnText: {
-    color: '#FFF',
+  actionIconBgDirections: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#007AFF',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  actionIconBgNotification: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#FF3B30',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  actionCardTitle: {
     fontSize: 16,
     fontWeight: '600',
-    marginLeft: 8,
+    marginBottom: 2,
   },
-  actionBtnTextSecondary: {
-    fontSize: 16,
-    fontWeight: '600',
-    marginLeft: 8,
+  actionCardSubtitle: {
+    fontSize: 14,
   },
-  addFamilyBtn: {
+  notificationCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 16,
-    marginTop: 16,
     borderRadius: 16,
-    borderWidth: 1,
-    borderStyle: 'dashed',
+    padding: 16,
+    marginBottom: 8,
   },
-  addFamilyText: {
-    fontSize: 16,
-    fontWeight: '600',
-    marginLeft: 8,
-  },
+  markerPin: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: '#FFF',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 4,
+  }
 });
