@@ -1,9 +1,12 @@
-import { View, Text, StyleSheet, ScrollView, Dimensions, TouchableOpacity } from 'react-native';
+import React, { useState, useEffect, useCallback } from 'react';
+import { View, Text, StyleSheet, ScrollView, Dimensions, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Image } from 'expo-image';
 import { Feather, Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import Animated, { FadeInUp } from 'react-native-reanimated';
+import { useApp } from '@/context/AppContext';
+import { api, ReminderItem, FallRiskItem } from '@/services/api';
 
 const { width } = Dimensions.get('window');
 
@@ -11,6 +14,12 @@ export default function HomeScreen() {
   const router = useRouter();
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
+
+  const { caretaker, elderlyUsers, selectedUser, setSelectedUser, loading: appLoading } = useApp();
+
+  const [reminders, setReminders] = useState<ReminderItem[]>([]);
+  const [fallRisks, setFallRisks] = useState<FallRiskItem[]>([]);
+  const [loadingMetrics, setLoadingMetrics] = useState<boolean>(false);
 
   const theme = {
     background: isDark ? '#000000' : '#F2F2F7',
@@ -25,26 +34,91 @@ export default function HomeScreen() {
     alertText: '#FF3B30',
   };
 
+  const fetchUserMetrics = useCallback(async () => {
+    if (!selectedUser) {
+      setReminders([]);
+      setFallRisks([]);
+      return;
+    }
+    try {
+      setLoadingMetrics(true);
+      const [fetchedReminders, fetchedFallRisks] = await Promise.all([
+        api.getUserReminders(selectedUser.id).catch(() => []),
+        api.getUserFallRisks(selectedUser.id).catch(() => []),
+      ]);
+      setReminders(fetchedReminders);
+      setFallRisks(fetchedFallRisks);
+    } catch (err) {
+      console.error('Error fetching user metrics:', err);
+    } finally {
+      setLoadingMetrics(false);
+    }
+  }, [selectedUser]);
+
+  useEffect(() => {
+    fetchUserMetrics();
+  }, [fetchUserMetrics]);
+
+  const latestFallRisk = fallRisks.length > 0 ? fallRisks[0] : null;
+
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
-      <ScrollView 
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.scrollContent}
-      >
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
         {/* Top Section */}
         <Animated.View entering={FadeInUp.delay(100).duration(800)} style={styles.header}>
           <View style={styles.headerTop}>
-            <View>
-              <Text style={[styles.greeting, { color: theme.textSecondary }]}>Good Morning</Text>
-              <Text style={[styles.name, { color: theme.textPrimary }]}>Steve Roger</Text>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.greeting, { color: theme.textSecondary }]}>
+                Caretaker: {caretaker?.name || 'Steve Rogers'}
+              </Text>
+              <Text style={[styles.name, { color: theme.textPrimary }]} numberOfLines={1}>
+                {selectedUser ? selectedUser.name : 'No User Selected'}
+              </Text>
             </View>
-            <TouchableOpacity 
+            <TouchableOpacity
               style={[styles.mapIconBtn, { backgroundColor: theme.cardBg, borderColor: theme.border }]}
               onPress={() => router.push('/location')}
             >
               <Feather name="map" size={22} color={theme.accent} />
             </TouchableOpacity>
           </View>
+
+          {/* Elderly User Selector Pills */}
+          {elderlyUsers.length > 0 && (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.userSelectorScroll}>
+              {elderlyUsers.map((user) => {
+                const isSelected = selectedUser?.id === user.id;
+                return (
+                  <TouchableOpacity
+                    key={user.id}
+                    style={[
+                      styles.userPill,
+                      {
+                        backgroundColor: isSelected ? theme.accent : theme.cardBg,
+                        borderColor: isSelected ? theme.accent : theme.border,
+                      },
+                    ]}
+                    onPress={() => setSelectedUser(user)}
+                  >
+                    <Ionicons
+                      name="person"
+                      size={14}
+                      color={isSelected ? '#FFF' : theme.textSecondary}
+                      style={{ marginRight: 6 }}
+                    />
+                    <Text
+                      style={[
+                        styles.userPillText,
+                        { color: isSelected ? '#FFF' : theme.textPrimary },
+                      ]}
+                    >
+                      {user.name} ({user.relation})
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+          )}
         </Animated.View>
 
         {/* Health Overview (2x2 Grid) */}
@@ -57,7 +131,9 @@ export default function HomeScreen() {
                 <Feather name="heart" size={24} color="#EF4444" />
                 <View style={styles.liveIndicator} />
               </View>
-              <Text style={[styles.cardValue, { color: theme.textPrimary }]}>-- <Text style={styles.cardUnit}>BPM</Text></Text>
+              <Text style={[styles.cardValue, { color: theme.textPrimary }]}>
+                -- <Text style={styles.cardUnit}>BPM</Text>
+              </Text>
               <Text style={[styles.cardLabel, { color: theme.textSecondary }]}>Heart Rate</Text>
             </View>
 
@@ -66,7 +142,9 @@ export default function HomeScreen() {
               <View style={styles.cardHeader}>
                 <MaterialCommunityIcons name="heart-pulse" size={28} color="#8B5CF6" />
               </View>
-              <Text style={[styles.cardValue, { color: theme.textPrimary }]}>--/-- <Text style={styles.cardUnit}>mmHg</Text></Text>
+              <Text style={[styles.cardValue, { color: theme.textPrimary }]}>
+                --/-- <Text style={styles.cardUnit}>mmHg</Text>
+              </Text>
               <Text style={[styles.cardLabel, { color: theme.textSecondary }]}>BP Stats</Text>
             </View>
 
@@ -75,45 +153,72 @@ export default function HomeScreen() {
               <View style={styles.cardHeader}>
                 <MaterialCommunityIcons name="alert-rhombus-outline" size={26} color="#F59E0B" />
               </View>
-              <Text style={[styles.cardValue, { color: theme.textPrimary }]}>Low <Text style={styles.cardUnit}>/ --</Text></Text>
+              <Text style={[styles.cardValue, { color: theme.textPrimary }]}>
+                {latestFallRisk ? latestFallRisk.riskLevel : 'LOW'}{' '}
+                <Text style={styles.cardUnit}>
+                  / {latestFallRisk ? (Number(latestFallRisk.riskScore) * 100).toFixed(0) + '%' : 'Normal'}
+                </Text>
+              </Text>
               <Text style={[styles.cardLabel, { color: theme.textSecondary }]}>Fall Risk</Text>
             </View>
 
             {/* Reminders Card */}
-            <TouchableOpacity 
+            <TouchableOpacity
               style={[styles.dataCard, { backgroundColor: theme.cardBg, borderColor: theme.border }]}
               onPress={() => router.push('/reminders-list')}
             >
               <View style={styles.cardHeader}>
                 <Feather name="check-square" size={24} color="#10B981" />
               </View>
+
               <View style={{ marginVertical: 2 }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
-                  <Feather name="check-circle" size={14} color="#10B981" />
-                  <Text style={{ fontSize: 13, color: theme.textSecondary, marginLeft: 6, textDecorationLine: 'line-through' }} numberOfLines={1}>Meds (8 AM)</Text>
-                </View>
-                <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
-                  <Feather name="circle" size={14} color={theme.textSecondary} />
-                  <Text style={{ fontSize: 13, color: theme.textPrimary, marginLeft: 6 }} numberOfLines={1}>Drink water</Text>
-                </View>
+                {reminders.length === 0 ? (
+                  <Text style={{ fontSize: 13, color: theme.textSecondary }}>No active reminders</Text>
+                ) : (
+                  reminders.slice(0, 2).map((item) => (
+                    <View key={item.id} style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
+                      <Feather
+                        name={item.completed ? 'check-circle' : 'circle'}
+                        size={14}
+                        color={item.completed ? '#10B981' : theme.textSecondary}
+                      />
+                      <Text
+                        style={{
+                          fontSize: 13,
+                          color: item.completed ? theme.textSecondary : theme.textPrimary,
+                          marginLeft: 6,
+                          textDecorationLine: item.completed ? 'line-through' : 'none',
+                        }}
+                        numberOfLines={1}
+                      >
+                        {item.title}
+                      </Text>
+                    </View>
+                  ))
+                )}
               </View>
               <Text style={[styles.cardLabel, { color: theme.textSecondary, marginTop: 'auto' }]}>Reminders</Text>
             </TouchableOpacity>
           </View>
         </Animated.View>
 
-        {/* Health Trends Section */}
+        {/* Cognitive Trend Section */}
         <Animated.View entering={FadeInUp.delay(500).duration(800)} style={styles.section}>
           <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>Cognitive Trend</Text>
-          
-          <View style={[styles.largeTrendCard, { backgroundColor: theme.cardBg, borderColor: theme.border, padding: 0, overflow: 'hidden' }]}>
-            <Image 
-              source={{ uri: "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcT6Cai6gSoxEG4G-p-xBq78DTmjMI6P0xYtJzSuLIl5Lw&s" }}
+
+          <View
+            style={[
+              styles.largeTrendCard,
+              { backgroundColor: theme.cardBg, borderColor: theme.border, padding: 0, overflow: 'hidden' },
+            ]}
+          >
+            <Image
+              source={{ uri: 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcT6Cai6gSoxEG4G-p-xBq78DTmjMI6P0xYtJzSuLIl5Lw&s' }}
               style={{ width: '100%', height: 220 }}
               contentFit="cover"
             />
           </View>
-          <TouchableOpacity 
+          <TouchableOpacity
             style={[styles.showAllButton, { backgroundColor: theme.cardBg, borderColor: theme.border }]}
             onPress={() => router.push('/health-data')}
           >
@@ -121,23 +226,30 @@ export default function HomeScreen() {
           </TouchableOpacity>
         </Animated.View>
 
-        {/* Caretaker Section */}
-        <Animated.View entering={FadeInUp.delay(600).duration(800)} style={styles.section}>
-          <TouchableOpacity style={[styles.caretakerButton, { backgroundColor: theme.cardBg, borderColor: theme.border }]}>
-            <View style={styles.caretakerInfo}>
-              <View style={[styles.caretakerAvatar, { backgroundColor: theme.accent }]}>
-                <Text style={styles.caretakerInitials}>JD</Text>
+        {/* Selected User Details Card */}
+        {selectedUser && (
+          <Animated.View entering={FadeInUp.delay(600).duration(800)} style={styles.section}>
+            <View style={[styles.caretakerButton, { backgroundColor: theme.cardBg, borderColor: theme.border }]}>
+              <View style={styles.caretakerInfo}>
+                <View style={[styles.caretakerAvatar, { backgroundColor: theme.accent }]}>
+                  <Text style={styles.caretakerInitials}>
+                    {selectedUser.name.substring(0, 2).toUpperCase()}
+                  </Text>
+                </View>
+                <View>
+                  <Text style={[styles.caretakerRole, { color: theme.textSecondary }]}>
+                    {selectedUser.relation} • {selectedUser.age} yrs
+                  </Text>
+                  <Text style={[styles.caretakerName, { color: theme.textPrimary }]}>{selectedUser.name}</Text>
+                  <Text style={[styles.caretakerRole, { color: theme.textSecondary }]}>{selectedUser.contact}</Text>
+                </View>
               </View>
-              <View>
-                <Text style={[styles.caretakerRole, { color: theme.textSecondary }]}>Guardian360 user</Text>
-                <Text style={[styles.caretakerName, { color: theme.textPrimary }]}>Jane Doe</Text>
+              <View style={[styles.callButton, { backgroundColor: theme.successBg }]}>
+                <Feather name="phone" size={20} color={theme.successText} />
               </View>
             </View>
-            <View style={[styles.callButton, { backgroundColor: theme.successBg }]}>
-              <Feather name="phone" size={20} color={theme.successText} />
-            </View>
-          </TouchableOpacity>
-        </Animated.View>
+          </Animated.View>
+        )}
 
         <View style={{ height: 100 }} />
       </ScrollView>
@@ -151,10 +263,10 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     padding: 20,
-    paddingTop: 60, // Adjust for safe area / header
+    paddingTop: 60,
   },
   header: {
-    marginBottom: 32,
+    marginBottom: 28,
   },
   headerTop: {
     flexDirection: 'row',
@@ -162,12 +274,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   greeting: {
-    fontSize: 18,
+    fontSize: 14,
     fontWeight: '500',
     marginBottom: 4,
   },
   name: {
-    fontSize: 32,
+    fontSize: 28,
     fontWeight: '700',
     letterSpacing: -0.5,
   },
@@ -179,27 +291,24 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderWidth: 1,
   },
-  statusBadge: {
+  userSelectorScroll: {
+    marginTop: 16,
+  },
+  userPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    alignSelf: 'flex-start',
-    paddingHorizontal: 12,
+    paddingHorizontal: 14,
     paddingVertical: 8,
     borderRadius: 20,
+    borderWidth: 1,
+    marginRight: 10,
   },
-  statusDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: '#22C55E',
-    marginRight: 8,
-  },
-  statusText: {
+  userPillText: {
     fontSize: 14,
     fontWeight: '600',
   },
   section: {
-    marginBottom: 32,
+    marginBottom: 28,
   },
   sectionTitle: {
     fontSize: 22,
@@ -214,7 +323,7 @@ const styles = StyleSheet.create({
     gap: 16,
   },
   dataCard: {
-    width: (width - 40 - 16) / 2, // 20 padding each side, 16 gap
+    width: (width - 40 - 16) / 2,
     padding: 16,
     borderRadius: 24,
     borderWidth: 1,
@@ -238,74 +347,20 @@ const styles = StyleSheet.create({
     backgroundColor: '#EF4444',
   },
   cardValue: {
-    fontSize: 28,
+    fontSize: 24,
     fontWeight: '700',
     marginBottom: 4,
   },
   cardUnit: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '500',
   },
   cardLabel: {
     fontSize: 14,
     fontWeight: '500',
   },
-  trendsScroll: {
-    gap: 16,
-    paddingRight: 20, // To allow scrolling completely to the right edge
-  },
-  trendCard: {
-    width: 160,
-    padding: 16,
-    borderRadius: 20,
-    borderWidth: 1,
-    marginRight: 16, // Instead of gap on iOS older versions, marginRight is safer, but scroll uses gap now
-  },
-  trendHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  trendTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  mockGraph: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    justifyContent: 'space-between',
-    height: 50,
-  },
-  graphBar: {
-    width: 12,
-    borderRadius: 6,
-    opacity: 0.8,
-  },
-  articleCard: {
-    borderRadius: 24,
-    borderWidth: 1,
-    overflow: 'hidden',
-    marginBottom: 16,
-  },
-  articleImage: {
-    width: '100%',
-    height: 160,
-  },
-  articleContent: {
-    padding: 16,
-  },
-  articleTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    marginBottom: 8,
-  },
-  articleDesc: {
-    fontSize: 14,
-    lineHeight: 20,
-  },
   showAllButton: {
-    marginTop: 20,
+    marginTop: 16,
     paddingVertical: 14,
     borderRadius: 16,
     borderWidth: 1,
@@ -314,6 +369,10 @@ const styles = StyleSheet.create({
   showAllText: {
     fontSize: 16,
     fontWeight: '600',
+  },
+  largeTrendCard: {
+    borderRadius: 24,
+    borderWidth: 1,
   },
   caretakerButton: {
     flexDirection: 'row',
@@ -326,6 +385,7 @@ const styles = StyleSheet.create({
   caretakerInfo: {
     flexDirection: 'row',
     alignItems: 'center',
+    flex: 1,
   },
   caretakerAvatar: {
     width: 48,
@@ -341,11 +401,10 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   caretakerRole: {
-    fontSize: 13,
-    marginBottom: 4,
+    fontSize: 12,
   },
   caretakerName: {
-    fontSize: 18,
+    fontSize: 17,
     fontWeight: '600',
   },
   callButton: {
@@ -354,106 +413,5 @@ const styles = StyleSheet.create({
     borderRadius: 22,
     justifyContent: 'center',
     alignItems: 'center',
-  },
-  wellnessCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 16,
-    borderRadius: 20,
-    borderWidth: 1,
-    marginBottom: 16,
-  },
-  wellnessIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: 'rgba(139, 92, 246, 0.1)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 16,
-  },
-  wellnessInfo: {
-    flex: 1,
-  },
-  wellnessTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    marginBottom: 4,
-  },
-  wellnessDesc: {
-    fontSize: 14,
-    fontStyle: 'italic',
-  },
-  playButton: {
-    paddingLeft: 12,
-  },
-  largeTrendCard: {
-    padding: 24,
-    borderRadius: 24,
-    borderWidth: 1,
-    alignItems: 'stretch',
-    marginBottom: 8,
-  },
-  largeTrendHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 20,
-  },
-  largeTrendTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    marginBottom: 4,
-  },
-  largeTrendSubtitle: {
-    fontSize: 14,
-  },
-  lineChartMock: {
-    height: 160,
-    justifyContent: 'center',
-    paddingVertical: 10,
-  },
-  chartHeaderRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 20,
-  },
-  chartStatCol: {
-    flex: 1,
-  },
-  legendRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 4,
-  },
-  legendDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    marginRight: 6,
-  },
-  legendText: {
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  statValue: {
-    fontSize: 32,
-    fontWeight: '700',
-    letterSpacing: -0.5,
-  },
-  statUnit: {
-    fontSize: 18,
-    fontWeight: '600',
-  },
-  xAxis: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 8,
-    paddingHorizontal: 4,
-  },
-  xLabel: {
-    color: '#9CA3AF',
-    fontSize: 12,
-    fontWeight: '600',
   },
 });

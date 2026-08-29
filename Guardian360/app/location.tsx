@@ -7,24 +7,49 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { BlurView } from 'expo-blur';
 import MapView, { UrlTile, Marker } from 'react-native-maps';
 
+import { useApp } from '@/context/AppContext';
+
 const { width } = Dimensions.get('window');
 
-// Mock Data
+// Default fallback coordinates (Bengaluru, JSS Academy)
 const locationData = { latitude: 12.903269, longitude: 77.504899 };
-const mockFamilyMembers = [
-  { id: '1', name: 'Steve Roger', email: 'Steve Roger', details: 'College • 17 hr ago', address: 'JSS Academy of Technical Education, Bengaluru', distance: '15 km', location: { lat: 12.903269, lng: 77.504899 } },
-  { id: '2', name: 'Jane Doe', email: 'Jane Doe', details: 'Work • 2 hr ago', address: '42,8th C Main, Malleshwaram west, Bengaluru', distance: '12 km', location: { lat: 13.0092142, lng: 77.5578409 } },
-];
 
 export default function LocationScreen() {
   const router = useRouter();
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
 
-  const [familyMembers, setFamilyMembers] = useState(mockFamilyMembers);
+  const { caretaker, elderlyUsers, selectedUser } = useApp();
+
+  // Combine caretaker and elderly users into dynamic family members list
+  const familyMembers = [
+    {
+      id: 'caretaker-1',
+      name: caretaker?.name || 'Steve Rogers',
+      role: 'Caretaker',
+      details: 'Active now • Bengaluru',
+      address: 'JSS Academy of Technical Education, Bengaluru',
+      distance: '0 km',
+      location: { lat: 12.903269, lng: 77.504899 },
+    },
+    ...elderlyUsers.map((user, idx) => ({
+      id: user.id,
+      name: user.name,
+      role: `${user.relation} (${user.age} yrs)`,
+      details: `Monitored • ${user.contact}`,
+      address: idx % 2 === 0 ? '42, 8th C Main, Malleshwaram West, Bengaluru' : 'Indiranagar 100ft Rd, Bengaluru',
+      distance: `${(idx + 1) * 3} km`,
+      location: {
+        lat: 12.903269 + (idx + 1) * 0.008,
+        lng: 77.504899 + (idx + 1) * 0.008,
+      },
+    })),
+  ];
+
   const [isAddFamilyVisible, setIsAddFamilyVisible] = useState(false);
   const [isViewingMyLocation, setIsViewingMyLocation] = useState(true);
   const [selectedMember, setSelectedMember] = useState<any>(null);
+
   
   const [region, setRegion] = useState({
       latitude: locationData.latitude,
@@ -189,7 +214,7 @@ export default function LocationScreen() {
                         <Ionicons name="person" size={24} color="#FFFFFF" />
                       </View>
                       <View style={styles.personInfo}>
-                        <Text style={[styles.personName, { color: theme.textPrimary }]} numberOfLines={1}>{member.email}</Text>
+                        <Text style={[styles.personName, { color: theme.textPrimary }]} numberOfLines={1}>{member.name}</Text>
                         <Text style={[styles.personDetails, { color: theme.textSecondary }]}>{member.details}</Text>
                       </View>
                       <Text style={[styles.personDistance, { color: theme.textSecondary }]}>{member.distance}</Text>
