@@ -1,21 +1,164 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Get a free hosted Postgres database in seconds: `npx create-db`
-
 generator client {
-  provider = "prisma-client"
-  output   = "../generated/prisma"
+  provider = "prisma-client-js"
 }
 
 datasource db {
   provider = "postgresql"
 }
 
-model User {
-  id        Int      @id @default(autoincrement())
-  name      String
-  email     String   @unique
-  createdAt DateTime @default(now())
+
+// ===============================
+// ENUMS
+// ===============================
+
+enum RiskLevel {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
 }
 
+enum EventType {
+  NORMAL
+  ABNORMAL_GAIT
+  FALL_RISK
+  FALL_DETECTED
+}
+
+enum ReminderCategory {
+  MEDS
+  TASK
+  HABIT
+}
+
+
+// ===============================
+// CARETAKER
+// ===============================
+
+model Caretaker {
+  id        String   @id @default(uuid())
+  name      String
+  email     String   @unique
+  contact   String
+
+  users     CaretakerUser[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+
+// ===============================
+// ELDERLY USER
+// ===============================
+
+model ElderlyUser {
+  id         String   @id @default(uuid())
+  name       String
+  age        Int
+  relation   String
+  contact    String
+
+  caretakers CaretakerUser[]
+  readings   SensorReading[]
+  fallRisks  FallRisk[]
+  reminders  Reminder[]
+
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
+
+// ===============================
+// CARETAKER ↔ ELDERLY USER
+// ===============================
+
+model CaretakerUser {
+  id          String   @id @default(uuid())
+  caretakerId String
+  userId      String
+
+  caretaker   Caretaker  @relation(fields: [caretakerId], references: [id], onDelete: Cascade)
+  user        ElderlyUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt   DateTime @default(now())
+
+  @@unique([caretakerId, userId])
+  @@index([caretakerId])
+  @@index([userId])
+}
+
+
+// ===============================
+// RAW MPU6050 SENSOR DATA
+// ===============================
+
+model SensorReading {
+  id        BigInt   @id @default(autoincrement())
+
+  userId    String
+  timestamp DateTime @default(now())
+
+  // Accelerometer
+  ax        Float
+  ay        Float
+  az        Float
+
+  // Gyroscope
+  gx        Float
+  gy        Float
+  gz        Float
+
+  user      ElderlyUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, timestamp])
+}
+
+
+// ===============================
+// FALL RISK / AI PREDICTION
+// ===============================
+
+model FallRisk {
+  id         BigInt   @id @default(autoincrement())
+
+  userId     String
+  timestamp  DateTime @default(now())
+
+  riskLevel  RiskLevel
+  riskScore  Decimal  @db.Decimal(5, 4)
+  eventType  EventType
+
+  user       ElderlyUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, timestamp])
+}
+
+
+// ===============================
+// REMINDERS
+// ===============================
+
+model Reminder {
+  id          BigInt   @id @default(autoincrement())
+
+  userId      String
+
+  title       String   @db.VarChar(150)
+  notes       String?
+
+  date        DateTime @db.Date
+  time        DateTime? @db.Time
+
+  urgent      Boolean  @default(false)
+  category    ReminderCategory
+  completed   Boolean  @default(false)
+
+  user        ElderlyUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([userId, date])
+}
