@@ -29,12 +29,13 @@ export default function HealthDataScreen() {
 
   useEffect(() => {
     if (!selectedUser) return;
+    const userId = selectedUser.id;
     async function loadHealthData() {
       try {
         setLoading(true);
         const [fr, sr] = await Promise.all([
-          api.getUserFallRisks(selectedUser.id).catch(() => []),
-          api.getUserSensorReadings(selectedUser.id).catch(() => []),
+          api.getUserFallRisks(userId).catch(() => []),
+          api.getUserSensorReadings(userId).catch(() => []),
         ]);
         setFallRisks(fr);
         setReadings(sr);
