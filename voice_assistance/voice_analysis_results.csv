@@ -1,0 +1,17 @@
+date,time,reminder_id,reminder_title,reminder_notes,question,recognized_text,sentiment,sentiment_score,duration_seconds,average_energy,zero_crossing_rate,word_count,speech_rate_words_per_second,observation
+2026-08-29,18:10:46,1,Medicine Reminder,Please take your evening medicine.,How are you feeling right now?,I am feeling good,Positive,0.5267,2.04,0.01321,0.14069,4,1.96,Normal response pattern
+2026-08-29,18:13:26,1,Medicine Reminder,Please take your evening medicine.,How are you feeling right now?,I am not feeling good,Negative,-0.4168,1.7,0.03319,0.10937,5,2.95,Negative emotional tone
+2026-08-29,18:16:29,1,Medicine Reminder,Please take your evening medicine.,How are you feeling right now?,I need help,Positive,0.4019,1.7,0.01565,0.15009,3,1.77,Normal response pattern
+2026-08-29,18:20:28,1,Medicine Reminder,Please take your evening medicine.,How are you feeling right now?,I need help,Needs Help,-1.0,1.72,0.01325,0.14998,3,1.75,User requested help
+2026-08-29,18:21:31,1,Medicine Reminder,Please take your evening medicine.,How are you feeling right now?,I want to die,Negative,-0.5574,2.53,0.0114,0.13672,4,1.58,Negative emotional tone
+2026-08-29,18:23:30,1,Medicine Reminder,Please take your evening medicine.,How are you feeling right now?,I need someone to talk,Neutral,0.0,2.02,0.02006,0.10998,5,2.48,Normal response pattern
+2026-08-29,18:27:28,1,Medicine Reminder,Please take your evening medicine.,How are you feeling right now?,I feel,Neutral,0.0,1.56,0.04034,0.14691,2,1.29,Very short response
+2026-08-29,18:28:25,1,Medicine Reminder,Please take your evening medicine.,How are you feeling right now?,I need help,Needs Help,-1.0,2.48,0.01605,0.14063,3,1.21,User requested immediate help
+2026-08-29,18:32:08,1,Medicine Reminder,Please take your evening medicine.,How are you feeling right now?,,Unknown,0.0,0.86,0.01263,0.11921,0,0.0,"Very short response, Slow speech response"
+2026-08-29,18:33:23,1,Medicine Reminder,Please take your evening medicine.,How are you feeling right now?,I want to die,Negative,-0.5574,2.25,0.02672,0.13037,4,1.78,Negative emotional tone
+2026-08-29,18:49:31,1,Medicine Reminder,Please take your evening medicine.,How are you feeling right now?,,Unknown,0.0,Unknown,0.0,1.53,0.01879,0.13632,0,0.0,"Very short response, Slow speech response"
+2026-08-29,18:50:25,1,Medicine Reminder,Please take your evening medicine.,How are you feeling right now?,I am fine,Positive,0.2023,Unknown,0.0,1.72,0.02023,0.11952,3,1.75,Normal response pattern
+2026-08-31,11:06:37,1,Medicine Reminder,Please take your evening medicine.,How are you feeling right now?,I am feeling busy,Positive,0.128,Unknown,0.0,4.2,0.04416,0.19184,4,0.95,Normal response pattern
+2026-08-31,11:08:23,1,Medicine Reminder,Please take your evening medicine.,How are you feeling right now?,,Unknown,0.0,Unknown,0.0,1.18,0.07622,0.11855,0,0.0,"Very short response, Slow speech response"
+2026-08-31,11:09:24,1,Medicine Reminder,Please take your evening medicine.,How are you feeling right now?,,Unknown,0.0,Unknown,0.0,1.58,0.20357,0.17245,0,0.0,"Very short response, Slow speech response"
+2026-08-31,11:11:31,1,Medicine Reminder,Please take your evening medicine.,How are you feeling right now?,I am not feeling great,Negative,-0.5667,Unknown,0.0,1.81,0.06534,0.14196,5,2.76,Negative emotional tone in spoken words
