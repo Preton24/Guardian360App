@@ -1,26 +1,3 @@
-"""
-Project: Guardian 360
-Module: Local Voice Reminder + Speech Analysis Test
-
-This is only for checking/demo in VS Code.
-
-No database is used here.
-
-What this code does:
-1. Uses pre-set reminders from a Python list.
-2. Speaks the reminder.
-3. Asks a cognitive check-in question.
-4. Records the user's voice.
-5. Converts voice to text.
-6. Performs sentiment analysis.
-7. Extracts basic voice features.
-8. Saves result into a CSV file.
-
-Important:
-This is not a medical diagnosis system.
-It is only a basic project-level speech and mood analysis module.
-"""
-
 import os
 import time
 import datetime
@@ -40,25 +17,17 @@ from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 # 1. LOCAL REMINDERS FOR TESTING
 # --------------------------------------------------
 
-"""
-For quick testing:
-Change the time below to 1 minute after your current system time.
-
-Example:
-If current time is 16:20, set reminder time as 16:21.
-"""
-
 REMINDERS = [
     {
         "id": 1,
-        "time": "11:11",
+        "time": "14:29",
         "title": "Medicine Reminder",
         "notes": "Please take your evening medicine.",
         "question": "How are you feeling right now?"
     },
     {
         "id": 2,
-        "time": "16:31",
+        "time": "12:58",
         "title": "Water Reminder",
         "notes": "Please drink a glass of water.",
         "question": "Can you describe your mood today?"
@@ -70,10 +39,13 @@ REMINDERS = [
 # 2. BASIC SETTINGS
 # --------------------------------------------------
 
+MICROPHONE_INDEX = 2  # Microphone Array (Realtek(R) Audio)
+
 RECORD_SECONDS = 8
 SAMPLE_RATE = 16000
 TEMP_AUDIO_FILE = "user_response.wav"
 OUTPUT_CSV_FILE = "voice_analysis_results.csv"
+
 
 
 # --------------------------------------------------
@@ -115,27 +87,41 @@ def speak(message: str):
 # --------------------------------------------------
 # 4. RECORD USER VOICE
 # --------------------------------------------------
+def get_physical_microphone_index():
+    """
+    Finds the first valid physical microphone (avoiding Stereo Mix).
+    """
+    for index, name in enumerate(sr.Microphone.list_microphone_names()):
+        if ("microphone" in name.lower() or "mic" in name.lower()) and "stereo mix" not in name.lower():
+            print(f"Selected Microphone Device [Index {index}]: {name}")
+            return index
+    return None
+
 def record_voice_response():
     """
-    Records voice using the default Windows microphone.
-    Select HP H150 as default input device in Windows settings before running.
+    Records voice using the active physical microphone array or headset.
     """
-
     recognizer = sr.Recognizer()
+    recognizer.energy_threshold = 300
+    recognizer.dynamic_energy_threshold = True
 
     speak("Please answer after the beep.")
     time.sleep(1)
 
-    print("\nListening through default Windows microphone...")
+    print("\nListening through active physical microphone...")
     print("Speak now...")
 
+    mic_index = MICROPHONE_INDEX if MICROPHONE_INDEX is not None else get_physical_microphone_index()
+    print(f"Using Microphone Device Index: {mic_index}")
+
     try:
-        with sr.Microphone() as source:
-            recognizer.adjust_for_ambient_noise(source, duration=1)
+        source_mic = sr.Microphone(device_index=mic_index) if mic_index is not None else sr.Microphone()
+        with source_mic as source:
+            recognizer.adjust_for_ambient_noise(source, duration=0.5)
 
             audio = recognizer.listen(
                 source,
-                timeout=10,
+                timeout=15,
                 phrase_time_limit=RECORD_SECONDS
             )
 
@@ -151,35 +137,43 @@ def record_voice_response():
         print("Microphone recording error:", error)
         return None
 
+
 # --------------------------------------------------
 # 5. SPEECH TO TEXT
 # --------------------------------------------------
 
 def speech_to_text(audio_file):
     """
-    Converts recorded voice into text.
-
-    This uses Google Speech Recognition.
-    Internet connection is required.
+    Converts recorded voice into text using OpenAI Whisper ASR.
+    Falls back to Google Speech Recognition if needed.
     """
-
-    recognizer = sr.Recognizer()
-
-    with sr.AudioFile(audio_file) as source:
-        audio = recognizer.record(source)
-
     try:
-        text = recognizer.recognize_google(audio)
-        print("Recognized Text:", text)
+        import whisper
+        # Load lightweight Whisper model (tiny/base)
+        model = whisper.load_model("tiny")
+        result = model.transcribe(audio_file, fp16=False)
+        text = result.get("text", "").strip()
+        print("Recognized Text (Whisper ASR):", text)
         return text
 
-    except sr.UnknownValueError:
-        print("Speech could not be understood.")
-        return ""
+    except Exception as whisper_err:
+        print(f"Notice: Whisper ASR unavailable ({whisper_err}). Using Google ASR fallback...")
+        recognizer = sr.Recognizer()
+        with sr.AudioFile(audio_file) as source:
+            audio = recognizer.record(source)
 
-    except sr.RequestError:
-        print("Speech recognition service error. Please check internet connection.")
-        return ""
+        try:
+            text = recognizer.recognize_google(audio)
+            print("Recognized Text (Google ASR):", text)
+            return text
+
+        except sr.UnknownValueError:
+            print("Speech could not be understood.")
+            return ""
+        except sr.RequestError:
+            print("Speech recognition service error. Check internet connection.")
+            return ""
+
 
 
 # --------------------------------------------------
