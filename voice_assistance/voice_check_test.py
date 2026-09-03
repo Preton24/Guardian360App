@@ -20,7 +20,7 @@ from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 REMINDERS = [
     {
         "id": 1,
-        "time": "14:29",
+        "time": "15:54",
         "title": "Medicine Reminder",
         "notes": "Please take your evening medicine.",
         "question": "How are you feeling right now?"
