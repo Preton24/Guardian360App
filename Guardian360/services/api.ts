@@ -81,6 +81,22 @@ export interface SensorReadingItem {
   gz: number;
 }
 
+export interface LatestSensorData {
+  ax: number;
+  ay: number;
+  az: number;
+  gx: number;
+  gy: number;
+  gz: number;
+  heartRate: number | null;
+  spo2: number | null;
+  ir: number | null;
+  red: number | null;
+  fallDetected?: boolean;
+  timestamp?: string;
+}
+
+
 async function request<T>(endpoint: string, options?: RequestInit): Promise<T> {
   const url = `${API_BASE_URL}${endpoint}`;
   try {
@@ -202,4 +218,5 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(data),
     }),
+  getLatestSensorData: () => request<LatestSensorData>('/data'),
 };

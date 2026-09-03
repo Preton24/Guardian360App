@@ -467,8 +467,124 @@ app.post("/api/users/:userId/sensor-readings", async (req, res) => {
   }
 });
 
+// ==========================================
+// ESP32 SENSOR DATA ENDPOINTS (/data & /api/data)
+// ==========================================
+
+let latestSensorReading = {
+  ax: 0.0,
+  ay: 0.0,
+  az: 9.81,
+  gx: 0.0,
+  gy: 0.0,
+  gz: 0.0,
+  heartRate: null,
+  spo2: null,
+  ir: null,
+  red: null,
+  fallDetected: false,
+  timestamp: new Date().toISOString()
+};
+
+function parseNum(val, fallback = null) {
+  if (val === undefined || val === null || val === "") return fallback;
+  const num = Number(val);
+  return isNaN(num) ? fallback : num;
+}
+
+const handlePostData = async (req, res) => {
+  try {
+    const body = req.body || {};
+    if (typeof body !== "object" || Array.isArray(body)) {
+      return res.status(400).json({ error: "Invalid JSON body. Expected object." });
+    }
+
+    const ax = parseNum(body.ax, 0);
+    const ay = parseNum(body.ay, 0);
+    const az = parseNum(body.az, 0);
+    const gx = parseNum(body.gx, 0);
+    const gy = parseNum(body.gy, 0);
+    const gz = parseNum(body.gz, 0);
+
+    const heartRate = parseNum(body.heartRate, null);
+    const spo2 = parseNum(body.spo2, null);
+    const ir = parseNum(body.ir, null);
+    const red = parseNum(body.red, null);
+    const fallDetected = Boolean(body.fallDetected === true || body.fallDetected === "true");
+
+    latestSensorReading = {
+      ax,
+      ay,
+      az,
+      gx,
+      gy,
+      gz,
+      heartRate,
+      spo2,
+      ir,
+      red,
+      fallDetected,
+      timestamp: new Date().toISOString()
+    };
+
+    // Optionally record MPU6050 reading in DB for active default user if DB is available
+    try {
+      const defaultCaretaker = await prisma.caretaker.findFirst({
+        include: { users: { include: { user: true } } }
+      });
+      const user = defaultCaretaker?.users?.[0]?.user || await prisma.elderlyUser.findFirst();
+      if (user) {
+        await prisma.sensorReading.create({
+          data: {
+            userId: user.id,
+            ax,
+            ay,
+            az,
+            gx,
+            gy,
+            gz
+          }
+        });
+
+        if (fallDetected) {
+          await prisma.fallRisk.create({
+            data: {
+              userId: user.id,
+              riskLevel: "CRITICAL",
+              riskScore: 0.95,
+              eventType: "FALL_DETECTED"
+            }
+          });
+          console.log(`⚠️ FALL DETECTED event saved for user ${user.id}`);
+        }
+      }
+    } catch (dbErr) {
+      console.warn("Notice: Could not persist MPU6050 reading to database:", dbErr.message);
+    }
+
+    return res.status(201).json({
+      success: true,
+      message: "Sensor reading stored successfully",
+      data: latestSensorReading
+    });
+  } catch (err) {
+    console.error("Error handling POST /data:", err);
+    return res.status(500).json({ error: "Failed to process sensor reading" });
+  }
+};
+
+const handleGetData = (req, res) => {
+  res.json(latestSensorReading);
+};
+
+app.post("/data", handlePostData);
+app.post("/api/data", handlePostData);
+
+app.get("/data", handleGetData);
+app.get("/api/data", handleGetData);
+
 const PORT = process.env.PORT || 5000;
 
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Server running on http://localhost:${PORT} and listening on 0.0.0.0:${PORT}`);
-});
+});

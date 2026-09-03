@@ -1,12 +1,13 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { View, Text, StyleSheet, ScrollView, Dimensions, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Image } from 'expo-image';
 import { Feather, Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import Animated, { FadeInUp } from 'react-native-reanimated';
+import { Audio } from 'expo-av';
 import { useApp } from '@/context/AppContext';
-import { api, ReminderItem, FallRiskItem } from '@/services/api';
+import { api, ReminderItem, FallRiskItem, LatestSensorData } from '@/services/api';
 
 const { width } = Dimensions.get('window');
 
@@ -19,7 +20,13 @@ export default function HomeScreen() {
 
   const [reminders, setReminders] = useState<ReminderItem[]>([]);
   const [fallRisks, setFallRisks] = useState<FallRiskItem[]>([]);
+  const [sensorData, setSensorData] = useState<LatestSensorData | null>(null);
   const [loadingMetrics, setLoadingMetrics] = useState<boolean>(false);
+
+  // Fall Alert holding state & Audio sound player
+  const [isFallAlertActive, setIsFallAlertActive] = useState<boolean>(false);
+  const fallHoldTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const soundRef = useRef<Audio.Sound | null>(null);
 
   const theme = {
     background: isDark ? '#000000' : '#F2F2F7',
@@ -32,6 +39,46 @@ export default function HomeScreen() {
     successText: '#34C759',
     alertBg: 'rgba(255, 59, 48, 0.1)',
     alertText: '#FF3B30',
+  };
+
+  const playAlarmSound = async () => {
+    console.log('[Guardian360] 🔊 Playing Fall Emergency Alarm Sound...');
+    // 1. Web Environment Fallback
+    if (typeof window !== 'undefined' && typeof window.Audio !== 'undefined') {
+      try {
+        const webAudio = new window.Audio('https://assets.mixkit.co/active_storage/sfx/995/995-preview.mp3');
+        webAudio.volume = 1.0;
+        const playPromise = webAudio.play();
+        if (playPromise !== undefined) {
+          playPromise.catch((err) => console.warn('[Web Audio] Autoplay error:', err));
+        }
+      } catch (e) {
+        console.warn('[Web Audio] Sound play error:', e);
+      }
+    }
+
+    // 2. Native Expo AV Audio
+    try {
+      await Audio.setAudioModeAsync({
+        playsInSilentModeIOS: true,
+        staysActiveInBackground: true,
+        shouldDuckAndroid: true,
+      }).catch(() => {});
+
+      if (soundRef.current) {
+        await soundRef.current.stopAsync().catch(() => {});
+        await soundRef.current.unloadAsync().catch(() => {});
+      }
+
+      const { sound } = await Audio.Sound.createAsync(
+        require('../../assets/sounds/mixkit-classic-alarm-995.mp3'),
+        { shouldPlay: true, volume: 1.0 }
+      );
+      soundRef.current = sound;
+      await sound.playAsync().catch(() => {});
+    } catch (err) {
+      console.warn('[Expo AV] Could not play alarm sound:', err);
+    }
   };
 
   const fetchUserMetrics = useCallback(async () => {
@@ -55,11 +102,59 @@ export default function HomeScreen() {
     }
   }, [selectedUser]);
 
+  const fetchSensorData = useCallback(async () => {
+    try {
+      const data = await api.getLatestSensorData();
+      setSensorData(data);
+    } catch (err) {
+      // Silently handle backend offline
+    }
+  }, []);
+
   useEffect(() => {
     fetchUserMetrics();
   }, [fetchUserMetrics]);
 
+  useEffect(() => {
+    fetchSensorData();
+    const interval = setInterval(fetchSensorData, 3000);
+    return () => clearInterval(interval);
+  }, [fetchSensorData]);
+
   const latestFallRisk = fallRisks.length > 0 ? fallRisks[0] : null;
+
+  // Realtime check if live sensor hardware is currently reporting a fall
+  const rawFallDetected = Boolean(sensorData?.fallDetected);
+
+  useEffect(() => {
+    if (rawFallDetected) {
+      if (fallHoldTimerRef.current) {
+        clearTimeout(fallHoldTimerRef.current);
+        fallHoldTimerRef.current = null;
+      }
+      if (!isFallAlertActive) {
+        setIsFallAlertActive(true);
+        playAlarmSound();
+      }
+    } else if (isFallAlertActive && !fallHoldTimerRef.current) {
+      // Keep red card alert for extra 1.5 seconds before resetting
+      fallHoldTimerRef.current = setTimeout(() => {
+        setIsFallAlertActive(false);
+        fallHoldTimerRef.current = null;
+      }, 1500);
+    }
+  }, [rawFallDetected, isFallAlertActive]);
+
+  useEffect(() => {
+    return () => {
+      if (soundRef.current) {
+        soundRef.current.unloadAsync().catch(() => {});
+      }
+      if (fallHoldTimerRef.current) {
+        clearTimeout(fallHoldTimerRef.current);
+      }
+    };
+  }, []);
 
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
@@ -132,35 +227,58 @@ export default function HomeScreen() {
                 <View style={styles.liveIndicator} />
               </View>
               <Text style={[styles.cardValue, { color: theme.textPrimary }]}>
-                -- <Text style={styles.cardUnit}>BPM</Text>
+                {sensorData?.heartRate !== null && sensorData?.heartRate !== undefined ? sensorData.heartRate : '--'} <Text style={styles.cardUnit}>BPM</Text>
               </Text>
               <Text style={[styles.cardLabel, { color: theme.textSecondary }]}>Heart Rate</Text>
             </View>
 
-            {/* BP Stats Card */}
+            {/* SpO2 / Pulse Card */}
             <View style={[styles.dataCard, { backgroundColor: theme.cardBg, borderColor: theme.border }]}>
               <View style={styles.cardHeader}>
-                <MaterialCommunityIcons name="heart-pulse" size={28} color="#8B5CF6" />
+                <MaterialCommunityIcons name="water-percent" size={28} color="#0EA5E9" />
               </View>
               <Text style={[styles.cardValue, { color: theme.textPrimary }]}>
-                --/-- <Text style={styles.cardUnit}>mmHg</Text>
+                {sensorData?.spo2 !== null && sensorData?.spo2 !== undefined ? `${sensorData.spo2}%` : '--'} <Text style={styles.cardUnit}>SpO2</Text>
               </Text>
-              <Text style={[styles.cardLabel, { color: theme.textSecondary }]}>BP Stats</Text>
+              <Text style={[styles.cardLabel, { color: theme.textSecondary }]}>Blood Oxygen</Text>
             </View>
 
             {/* Fall Risk Card */}
-            <View style={[styles.dataCard, { backgroundColor: theme.cardBg, borderColor: theme.border }]}>
-              <View style={styles.cardHeader}>
-                <MaterialCommunityIcons name="alert-rhombus-outline" size={26} color="#F59E0B" />
-              </View>
-              <Text style={[styles.cardValue, { color: theme.textPrimary }]}>
-                {latestFallRisk ? latestFallRisk.riskLevel : 'LOW'}{' '}
-                <Text style={styles.cardUnit}>
-                  / {latestFallRisk ? (Number(latestFallRisk.riskScore) * 100).toFixed(0) + '%' : 'Normal'}
-                </Text>
-              </Text>
-              <Text style={[styles.cardLabel, { color: theme.textSecondary }]}>Fall Risk</Text>
-            </View>
+            {(() => {
+              const isFall = isFallAlertActive || rawFallDetected;
+              return (
+                <View
+                  style={[
+                    styles.dataCard,
+                    {
+                      backgroundColor: isFall ? (isDark ? '#451A1A' : '#FEF2F2') : theme.cardBg,
+                      borderColor: isFall ? '#EF4444' : theme.border,
+                      borderWidth: isFall ? 2 : 1,
+                    },
+                  ]}
+                >
+                  <View style={styles.cardHeader}>
+                    <MaterialCommunityIcons
+                      name={isFall ? 'alert-circle' : 'alert-rhombus-outline'}
+                      size={26}
+                      color={isFall ? '#EF4444' : '#F59E0B'}
+                    />
+                    {isFall && <View style={[styles.liveIndicator, { backgroundColor: '#EF4444' }]} />}
+                  </View>
+                  <Text style={[styles.cardValue, { color: isFall ? '#EF4444' : theme.textPrimary, fontSize: isFall ? 18 : 24 }]}>
+                    {isFall ? 'FALL DETECTED!' : (latestFallRisk ? latestFallRisk.riskLevel : 'LOW')}
+                    {!isFall && (
+                      <Text style={styles.cardUnit}>
+                        / {latestFallRisk ? (Number(latestFallRisk.riskScore) * 100).toFixed(0) + '%' : 'Normal'}
+                      </Text>
+                    )}
+                  </Text>
+                  <Text style={[styles.cardLabel, { color: isFall ? '#DC2626' : theme.textSecondary, fontWeight: isFall ? '700' : '500' }]}>
+                    {isFall ? 'EMERGENCY ALERT' : 'Fall Risk'}
+                  </Text>
+                </View>
+              );
+            })()}
 
             {/* Reminders Card */}
             <TouchableOpacity
