@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { View, Text, StyleSheet, ScrollView, Dimensions, TouchableOpacity, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Dimensions, TouchableOpacity, ActivityIndicator, RefreshControl } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Image } from 'expo-image';
@@ -30,11 +30,14 @@ export default function HomeScreen() {
   const [fallRisks, setFallRisks] = useState<FallRiskItem[]>([]);
   const [sensorData, setSensorData] = useState<LatestSensorData | null>(null);
   const [loadingMetrics, setLoadingMetrics] = useState<boolean>(false);
+  const [refreshing, setRefreshing] = useState<boolean>(false);
+  const [cognitiveRefreshTrigger, setCognitiveRefreshTrigger] = useState<number>(0);
 
   // Fall Alert holding state & Audio sound player
   const [isFallAlertActive, setIsFallAlertActive] = useState<boolean>(false);
   const fallHoldTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const soundRef = useRef<any>(null);
+
 
   const theme = {
     background: isDark ? '#000000' : '#F2F2F7',
@@ -121,6 +124,21 @@ export default function HomeScreen() {
     }
   }, []);
 
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await Promise.all([
+        fetchUserMetrics(),
+        fetchSensorData(),
+      ]);
+      setCognitiveRefreshTrigger((prev) => prev + 1);
+    } catch (e) {
+      // Ignored
+    } finally {
+      setRefreshing(false);
+    }
+  }, [fetchUserMetrics, fetchSensorData]);
+
   useEffect(() => {
     fetchUserMetrics();
   }, [fetchUserMetrics]);
@@ -168,7 +186,13 @@ export default function HomeScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.scrollContent}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.accent} />
+        }
+      >
         {/* Top Section */}
         <Animated.View entering={FadeInUp.delay(100).duration(800)} style={styles.header}>
           <View style={styles.headerTop}>
@@ -332,7 +356,7 @@ export default function HomeScreen() {
 
         {/* Cognitive Trend Section */}
         <Animated.View entering={FadeInUp.delay(500).duration(800)} style={styles.section}>
-          <CognitiveTrendChart userId={selectedUser?.id} />
+          <CognitiveTrendChart userId={selectedUser?.id} refreshTrigger={cognitiveRefreshTrigger} />
           <TouchableOpacity
             style={[styles.showAllButton, { backgroundColor: theme.cardBg, borderColor: theme.border }]}
             onPress={() => router.push('/health-data')}

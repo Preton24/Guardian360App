@@ -287,6 +287,21 @@ export default function RemindersListScreen() {
                     {item.notes ? (
                       <Text style={[styles.taskSubtext, { color: theme.textSecondary }]}>{item.notes}</Text>
                     ) : null}
+                    {hasRepeat && (
+                      <View style={styles.routineStatusRow}>
+                        <Feather
+                          name={item.completed ? 'check-circle' : 'repeat'}
+                          size={11}
+                          color={item.completed ? theme.green : theme.blue}
+                          style={{ marginRight: 4 }}
+                        />
+                        <Text style={[styles.routineStatusText, { color: item.completed ? theme.green : theme.blue }]}>
+                          {item.completed
+                            ? 'Done for today • Auto-unchecks tomorrow'
+                            : `Active today • Repeats ${item.repeat}`}
+                        </Text>
+                      </View>
+                    )}
 
                     {/* Metadata Badges (Repeat, Time, Urgent, Category) */}
                     <View style={styles.tagsContainer}>
@@ -622,5 +637,14 @@ const styles = StyleSheet.create({
     marginTop: 12,
     alignItems: 'center',
     paddingVertical: 12,
+  },
+  routineStatusRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 4,
+  },
+  routineStatusText: {
+    fontSize: 11,
+    fontWeight: '600',
   },
 });

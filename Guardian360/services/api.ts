@@ -197,7 +197,18 @@ export const api = {
     }),
 
   // Reminders
-  getUserReminders: (userId: string) => request<ReminderItem[]>(`/api/users/${userId}/reminders`),
+  getUserReminders: (userId: string) => {
+    const localDate = new Date().toLocaleDateString('en-CA'); // YYYY-MM-DD
+    const tzOffset = new Date().getTimezoneOffset();
+    return request<ReminderItem[]>(`/api/users/${userId}/reminders?clientDate=${localDate}&tzOffset=${tzOffset}`);
+  },
+  resetRepeatingReminders: (userId: string) => {
+    const localDate = new Date().toLocaleDateString('en-CA');
+    return request<{ success: boolean; message: string; count: number }>(`/api/users/${userId}/reminders/reset-repeating`, {
+      method: 'POST',
+      body: JSON.stringify({ clientDate: localDate }),
+    });
+  },
   createReminder: (
     userId: string,
     data: {

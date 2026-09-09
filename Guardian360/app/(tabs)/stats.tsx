@@ -1,5 +1,5 @@
 import React, { useState, useCallback } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Dimensions, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Dimensions, ActivityIndicator, RefreshControl } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather, MaterialCommunityIcons, FontAwesome5 } from '@expo/vector-icons';
 import { useRouter, useFocusEffect } from 'expo-router';
@@ -26,6 +26,7 @@ export default function StatsScreen() {
 
   const [reminders, setReminders] = useState<ReminderItem[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
+  const [refreshing, setRefreshing] = useState<boolean>(false);
   const [activeRoutine, setActiveRoutine] = useState<string>('all');
   const [currentDate, setCurrentDate] = useState<Date>(new Date());
 
@@ -67,6 +68,14 @@ export default function StatsScreen() {
       fetchReminders();
     }, [fetchReminders])
   );
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await fetchReminders();
+    setRefreshing(false);
+  }, [fetchReminders]);
+
+  const todayStr = new Date().toLocaleDateString('en-CA');
 
   // Helper to extract YYYY-MM-DD
   const getReminderDateStr = (r: ReminderItem): string => {
@@ -163,6 +172,7 @@ export default function StatsScreen() {
     // Highlighting days where reminders are completed in this month
     const highlightedDays: number[] = [];
     activeReminders.forEach((r) => {
+      // 1. Direct completion check
       if (r.completed) {
         const dateStr = getReminderDateStr(r);
         if (dateStr) {
@@ -170,6 +180,18 @@ export default function StatsScreen() {
           if (rYear === year && rMonth === month + 1) {
             if (!highlightedDays.includes(rDay)) {
               highlightedDays.push(rDay);
+            }
+          }
+        }
+      }
+      // 2. Preserved prior completion for repeating routines
+      if (r.repeat && r.repeat !== 'Never' && r.updatedAt) {
+        const updatedDateStr = r.updatedAt.split('T')[0];
+        if (updatedDateStr && updatedDateStr <= todayStr) {
+          const [uYear, uMonth, uDay] = updatedDateStr.split('-').map(Number);
+          if (uYear === year && uMonth === month + 1) {
+            if (!highlightedDays.includes(uDay)) {
+              highlightedDays.push(uDay);
             }
           }
         }
@@ -246,15 +268,35 @@ export default function StatsScreen() {
   };
 
   // Compute stats metrics
-  const totalCount = activeReminders.length;
-  const completedCount = activeReminders.filter((r) => r.completed).length;
+  // Prioritize active daily/repeating routines for today's rate
+  const todayRoutines = activeReminders.filter((r) => r.repeat && r.repeat !== 'Never');
+  const todayTasks = todayRoutines.length > 0
+    ? todayRoutines
+    : activeReminders.filter((r) => getReminderDateStr(r) === todayStr);
+
+  const displayTasks = todayTasks.length > 0 ? todayTasks : activeReminders;
+  const totalCount = displayTasks.length;
+  const completedCount = displayTasks.filter((r) => r.completed).length;
   const overallRate = totalCount > 0 ? (completedCount / totalCount) * 100 : 0;
 
   // Streak calculations
   const computeStreaks = (items: ReminderItem[]) => {
-    const completedDates = Array.from(
-      new Set(items.filter((r) => r.completed).map(getReminderDateStr).filter(Boolean))
-    ).sort();
+    const completedDateSet = new Set<string>();
+
+    items.forEach((r) => {
+      if (r.completed) {
+        const d = getReminderDateStr(r);
+        if (d) completedDateSet.add(d);
+      }
+      if (r.repeat && r.repeat !== 'Never' && r.updatedAt) {
+        const u = r.updatedAt.split('T')[0];
+        if (u && u <= todayStr) {
+          completedDateSet.add(u);
+        }
+      }
+    });
+
+    const completedDates = Array.from(completedDateSet).sort();
 
     let bestStreak = 0;
     let currentStreak = 0;
@@ -294,7 +336,6 @@ export default function StatsScreen() {
       }
 
       // Calculate current streak
-      const todayStr = new Date().toISOString().split('T')[0];
       let checkDate = new Date(todayStr);
       let checkStr = checkDate.toISOString().split('T')[0];
 
@@ -331,12 +372,18 @@ export default function StatsScreen() {
 
   // Grouping for Routine Completion (Overall View)
   const getTaskBreakdown = () => {
-    const grouped: Record<string, { title: string; total: number; completed: number; category: string }> = {};
+    const grouped: Record<string, { title: string; total: number; completed: number; category: string; repeat: string }> = {};
 
     reminders.forEach((r) => {
       const key = r.title.trim();
       if (!grouped[key]) {
-        grouped[key] = { title: key, total: 0, completed: 0, category: r.category };
+        grouped[key] = {
+          title: key,
+          total: 0,
+          completed: 0,
+          category: r.category,
+          repeat: r.repeat || 'Never',
+        };
       }
       grouped[key].total += 1;
       if (r.completed) grouped[key].completed += 1;
@@ -385,7 +432,17 @@ export default function StatsScreen() {
 
   // Yearly Status helper
   const renderYearlyStatus = () => {
-    const completedSet = new Set(activeReminders.filter((r) => r.completed).map(getReminderDateStr));
+    const completedSet = new Set<string>();
+    activeReminders.forEach((r) => {
+      if (r.completed) {
+        const d = getReminderDateStr(r);
+        if (d) completedSet.add(d);
+      }
+      if (r.repeat && r.repeat !== 'Never' && r.updatedAt) {
+        const u = r.updatedAt.split('T')[0];
+        if (u && u <= todayStr) completedSet.add(u);
+      }
+    });
     const yearStr = String(currentDate.getFullYear());
 
     return (
@@ -488,7 +545,13 @@ export default function StatsScreen() {
         </ScrollView>
       </View>
 
-      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        style={styles.content}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.primary} />
+        }
+      >
         {renderCalendar()}
 
         {loading ? (
@@ -503,10 +566,12 @@ export default function StatsScreen() {
               <View style={[styles.progressCircleBg, { borderColor: theme.primaryLight }]}>
                 <View style={styles.progressCircleInner}>
                   <Text style={[styles.progressPercentage, { color: theme.textPrimary }]}>
-                    {overallRate.toFixed(1)}%
+                    {overallRate.toFixed(0)}%
                   </Text>
-                  <Text style={[styles.progressLabel, { color: theme.textSecondary }]}>Overall Rate</Text>
-                  <Feather name="repeat" size={16} color={theme.textSecondary} style={{ marginTop: 8 }} />
+                  <Text style={[styles.progressLabel, { color: theme.textSecondary }]}>Today's Routines</Text>
+                  <Text style={[styles.progressSubLabel, { color: theme.textSecondary }]}>
+                    {completedCount} of {totalCount} done
+                  </Text>
                 </View>
               </View>
               <View
@@ -556,9 +621,17 @@ export default function StatsScreen() {
                 </Text>
               ) : (
                 taskBreakdowns.map((item, idx) => {
+                  const isRepeating = item.repeat && item.repeat !== 'Never';
                   const pct = item.total > 0 ? Math.round((item.completed / item.total) * 100) : 0;
                   const itemColor = getBreakdownColor(item.title, item.category);
                   const itemBg = getBreakdownBg(item.title, item.category);
+                  const statusSubtitle = isRepeating
+                    ? item.completed > 0
+                      ? '✓ Done for today'
+                      : `Active today • Repeats ${item.repeat}`
+                    : item.completed > 0
+                    ? 'Completed'
+                    : 'Pending';
 
                   return (
                     <View key={idx} style={styles.taskBreakdownItem}>
@@ -567,7 +640,12 @@ export default function StatsScreen() {
                       </View>
                       <View style={styles.taskBreakdownDetails}>
                         <View style={styles.taskBreakdownHeader}>
-                          <Text style={[styles.taskBreakdownName, { color: theme.textPrimary }]}>{item.title}</Text>
+                          <View>
+                            <Text style={[styles.taskBreakdownName, { color: theme.textPrimary }]}>{item.title}</Text>
+                            <Text style={[styles.taskBreakdownSub, { color: item.completed > 0 ? theme.teal : theme.textSecondary }]}>
+                              {statusSubtitle}
+                            </Text>
+                          </View>
                           <Text style={[styles.taskBreakdownPct, { color: itemColor }]}>{pct}%</Text>
                         </View>
                         <View style={[styles.taskProgressBarBg, { backgroundColor: theme.border }]}>
@@ -912,6 +990,16 @@ const styles = StyleSheet.create({
   taskProgressBarFill: {
     height: '100%',
     borderRadius: 3,
+  },
+  progressSubLabel: {
+    fontSize: 11,
+    marginTop: 4,
+    fontWeight: '500',
+  },
+  taskBreakdownSub: {
+    fontSize: 11,
+    marginTop: 2,
+    fontWeight: '500',
   },
 });
 
