@@ -10,6 +10,10 @@ import {
   TextInput,
   ActivityIndicator,
   Alert,
+  KeyboardAvoidingView,
+  Platform,
+  TouchableWithoutFeedback,
+  Keyboard,
 } from 'react-native';
 import { Feather, Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -464,340 +468,381 @@ export default function ProfileScreen() {
       {/* MODAL 1: ADD CARETAKER MODAL */}
       {/* ========================================== */}
       <Modal visible={isAddCaretakerOpen} animationType="slide" transparent>
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { backgroundColor: theme.cardBg }]}>
-            <View style={styles.modalHeader}>
-              <Text style={[styles.modalTitle, { color: theme.textPrimary }]}>Create New Caretaker</Text>
-              <TouchableOpacity onPress={() => setIsAddCaretakerOpen(false)}>
-                <Feather name="x" size={24} color={theme.textSecondary} />
-              </TouchableOpacity>
-            </View>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={{ flex: 1 }}
+        >
+          <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+            <View style={styles.modalOverlay}>
+              <View style={[styles.modalContent, { backgroundColor: theme.cardBg }]}>
+                <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+                  <View style={styles.modalHeader}>
+                    <Text style={[styles.modalTitle, { color: theme.textPrimary }]}>Create New Caretaker</Text>
+                    <TouchableOpacity onPress={() => setIsAddCaretakerOpen(false)}>
+                      <Feather name="x" size={24} color={theme.textSecondary} />
+                    </TouchableOpacity>
+                  </View>
 
-            <View style={styles.formGroup}>
-              <Text style={[styles.inputLabel, { color: theme.textSecondary }]}>Full Name</Text>
-              <TextInput
-                style={[styles.input, { color: theme.textPrimary, backgroundColor: theme.inputBg }]}
-                placeholder="e.g. Dr. Hank Pym"
-                placeholderTextColor={theme.textSecondary}
-                value={ctName}
-                onChangeText={setCtName}
-              />
-            </View>
+                  <View style={styles.formGroup}>
+                    <Text style={[styles.inputLabel, { color: theme.textSecondary }]}>Full Name</Text>
+                    <TextInput
+                      style={[styles.input, { color: theme.textPrimary, backgroundColor: theme.inputBg }]}
+                      placeholder="e.g. Dr. Hank Pym"
+                      placeholderTextColor={theme.textSecondary}
+                      value={ctName}
+                      onChangeText={setCtName}
+                    />
+                  </View>
 
-            <View style={styles.formGroup}>
-              <Text style={[styles.inputLabel, { color: theme.textSecondary }]}>Email Address</Text>
-              <TextInput
-                style={[styles.input, { color: theme.textPrimary, backgroundColor: theme.inputBg }]}
-                placeholder="e.g. hank.pym@example.com"
-                placeholderTextColor={theme.textSecondary}
-                keyboardType="email-address"
-                autoCapitalize="none"
-                value={ctEmail}
-                onChangeText={setCtEmail}
-              />
-            </View>
+                  <View style={styles.formGroup}>
+                    <Text style={[styles.inputLabel, { color: theme.textSecondary }]}>Email Address</Text>
+                    <TextInput
+                      style={[styles.input, { color: theme.textPrimary, backgroundColor: theme.inputBg }]}
+                      placeholder="e.g. hank.pym@example.com"
+                      placeholderTextColor={theme.textSecondary}
+                      keyboardType="email-address"
+                      autoCapitalize="none"
+                      value={ctEmail}
+                      onChangeText={setCtEmail}
+                    />
+                  </View>
 
-            <View style={styles.formGroup}>
-              <Text style={[styles.inputLabel, { color: theme.textSecondary }]}>Contact Phone</Text>
-              <TextInput
-                style={[styles.input, { color: theme.textPrimary, backgroundColor: theme.inputBg }]}
-                placeholder="e.g. +91 9876543212"
-                placeholderTextColor={theme.textSecondary}
-                keyboardType="phone-pad"
-                value={ctContact}
-                onChangeText={setCtContact}
-              />
-            </View>
+                  <View style={styles.formGroup}>
+                    <Text style={[styles.inputLabel, { color: theme.textSecondary }]}>Contact Phone</Text>
+                    <TextInput
+                      style={[styles.input, { color: theme.textPrimary, backgroundColor: theme.inputBg }]}
+                      placeholder="e.g. +91 9876543212"
+                      placeholderTextColor={theme.textSecondary}
+                      keyboardType="phone-pad"
+                      value={ctContact}
+                      onChangeText={setCtContact}
+                    />
+                  </View>
 
-            <TouchableOpacity
-              style={[styles.submitBtn, { backgroundColor: theme.purple }]}
-              onPress={handleSaveAddCaretaker}
-              disabled={submitting}
-            >
-              {submitting ? (
-                <ActivityIndicator color="#FFF" />
-              ) : (
-                <Text style={styles.submitBtnText}>Insert Caretaker into DB</Text>
-              )}
-            </TouchableOpacity>
-          </View>
-        </View>
+                  <TouchableOpacity
+                    style={[styles.submitBtn, { backgroundColor: theme.purple }]}
+                    onPress={handleSaveAddCaretaker}
+                    disabled={submitting}
+                  >
+                    {submitting ? (
+                      <ActivityIndicator color="#FFF" />
+                    ) : (
+                      <Text style={styles.submitBtnText}>Insert Caretaker into DB</Text>
+                    )}
+                  </TouchableOpacity>
+                </ScrollView>
+              </View>
+            </View>
+          </TouchableWithoutFeedback>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* ========================================== */}
       {/* MODAL 2: EDIT CARETAKER MODAL */}
       {/* ========================================== */}
       <Modal visible={!!editingCaretaker} animationType="slide" transparent>
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { backgroundColor: theme.cardBg }]}>
-            <View style={styles.modalHeader}>
-              <Text style={[styles.modalTitle, { color: theme.textPrimary }]}>Edit Caretaker Details</Text>
-              <TouchableOpacity onPress={() => setEditingCaretaker(null)}>
-                <Feather name="x" size={24} color={theme.textSecondary} />
-              </TouchableOpacity>
-            </View>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={{ flex: 1 }}
+        >
+          <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+            <View style={styles.modalOverlay}>
+              <View style={[styles.modalContent, { backgroundColor: theme.cardBg }]}>
+                <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+                  <View style={styles.modalHeader}>
+                    <Text style={[styles.modalTitle, { color: theme.textPrimary }]}>Edit Caretaker Details</Text>
+                    <TouchableOpacity onPress={() => setEditingCaretaker(null)}>
+                      <Feather name="x" size={24} color={theme.textSecondary} />
+                    </TouchableOpacity>
+                  </View>
 
-            <View style={styles.formGroup}>
-              <Text style={[styles.inputLabel, { color: theme.textSecondary }]}>Full Name</Text>
-              <TextInput
-                style={[styles.input, { color: theme.textPrimary, backgroundColor: theme.inputBg }]}
-                value={ctName}
-                onChangeText={setCtName}
-              />
-            </View>
+                  <View style={styles.formGroup}>
+                    <Text style={[styles.inputLabel, { color: theme.textSecondary }]}>Full Name</Text>
+                    <TextInput
+                      style={[styles.input, { color: theme.textPrimary, backgroundColor: theme.inputBg }]}
+                      value={ctName}
+                      onChangeText={setCtName}
+                    />
+                  </View>
 
-            <View style={styles.formGroup}>
-              <Text style={[styles.inputLabel, { color: theme.textSecondary }]}>Email Address</Text>
-              <TextInput
-                style={[styles.input, { color: theme.textPrimary, backgroundColor: theme.inputBg }]}
-                keyboardType="email-address"
-                autoCapitalize="none"
-                value={ctEmail}
-                onChangeText={setCtEmail}
-              />
-            </View>
+                  <View style={styles.formGroup}>
+                    <Text style={[styles.inputLabel, { color: theme.textSecondary }]}>Email Address</Text>
+                    <TextInput
+                      style={[styles.input, { color: theme.textPrimary, backgroundColor: theme.inputBg }]}
+                      keyboardType="email-address"
+                      autoCapitalize="none"
+                      value={ctEmail}
+                      onChangeText={setCtEmail}
+                    />
+                  </View>
 
-            <View style={styles.formGroup}>
-              <Text style={[styles.inputLabel, { color: theme.textSecondary }]}>Contact Phone</Text>
-              <TextInput
-                style={[styles.input, { color: theme.textPrimary, backgroundColor: theme.inputBg }]}
-                keyboardType="phone-pad"
-                value={ctContact}
-                onChangeText={setCtContact}
-              />
-            </View>
+                  <View style={styles.formGroup}>
+                    <Text style={[styles.inputLabel, { color: theme.textSecondary }]}>Contact Phone</Text>
+                    <TextInput
+                      style={[styles.input, { color: theme.textPrimary, backgroundColor: theme.inputBg }]}
+                      keyboardType="phone-pad"
+                      value={ctContact}
+                      onChangeText={setCtContact}
+                    />
+                  </View>
 
-            <TouchableOpacity
-              style={[styles.submitBtn, { backgroundColor: theme.purple }]}
-              onPress={handleSaveEditCaretaker}
-              disabled={submitting}
-            >
-              {submitting ? (
-                <ActivityIndicator color="#FFF" />
-              ) : (
-                <Text style={styles.submitBtnText}>Update Caretaker in DB</Text>
-              )}
-            </TouchableOpacity>
-          </View>
-        </View>
+                  <TouchableOpacity
+                    style={[styles.submitBtn, { backgroundColor: theme.purple }]}
+                    onPress={handleSaveEditCaretaker}
+                    disabled={submitting}
+                  >
+                    {submitting ? (
+                      <ActivityIndicator color="#FFF" />
+                    ) : (
+                      <Text style={styles.submitBtnText}>Update Caretaker in DB</Text>
+                    )}
+                  </TouchableOpacity>
+                </ScrollView>
+              </View>
+            </View>
+          </TouchableWithoutFeedback>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* ========================================== */}
       {/* MODAL 3: CARETAKER MANAGER & SWITCHER */}
       {/* ========================================== */}
       <Modal visible={isCaretakerManagerOpen} animationType="slide" transparent>
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { backgroundColor: theme.cardBg, maxHeight: '80%' }]}>
-            <View style={styles.modalHeader}>
-              <Text style={[styles.modalTitle, { color: theme.textPrimary }]}>Manage Caretakers</Text>
-              <TouchableOpacity onPress={() => setIsCaretakerManagerOpen(false)}>
-                <Feather name="x" size={24} color={theme.textSecondary} />
-              </TouchableOpacity>
-            </View>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={{ flex: 1 }}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={[styles.modalContent, { backgroundColor: theme.cardBg, maxHeight: '80%' }]}>
+              <View style={styles.modalHeader}>
+                <Text style={[styles.modalTitle, { color: theme.textPrimary }]}>Manage Caretakers</Text>
+                <TouchableOpacity onPress={() => setIsCaretakerManagerOpen(false)}>
+                  <Feather name="x" size={24} color={theme.textSecondary} />
+                </TouchableOpacity>
+              </View>
 
-            <ScrollView showsVerticalScrollIndicator={false}>
-              {allCaretakers.map((c) => {
-                const isActive = caretaker?.id === c.id;
-                return (
-                  <View
-                    key={c.id}
-                    style={[
-                      styles.caretakerManagerRow,
-                      { backgroundColor: theme.inputBg, borderColor: isActive ? theme.purple : 'transparent' },
-                    ]}
-                  >
-                    <TouchableOpacity
-                      style={{ flex: 1, flexDirection: 'row', alignItems: 'center' }}
-                      onPress={() => {
-                        setCaretaker(c);
-                        setIsCaretakerManagerOpen(false);
-                      }}
+              <ScrollView showsVerticalScrollIndicator={false}>
+                {allCaretakers.map((c) => {
+                  const isActive = caretaker?.id === c.id;
+                  return (
+                    <View
+                      key={c.id}
+                      style={[
+                        styles.caretakerManagerRow,
+                        { backgroundColor: theme.inputBg, borderColor: isActive ? theme.purple : 'transparent' },
+                      ]}
                     >
-                      <View style={[styles.avatarSmall, { backgroundColor: isActive ? theme.purple : theme.border }]}>
-                        <Text style={{ color: '#FFF', fontWeight: '700', fontSize: 14 }}>{getInitials(c.name)}</Text>
-                      </View>
-                      <View style={{ flex: 1 }}>
-                        <Text style={{ color: theme.textPrimary, fontWeight: '700', fontSize: 16 }}>
-                          {c.name} {isActive ? '(Active)' : ''}
-                        </Text>
-                        <Text style={{ color: theme.textSecondary, fontSize: 12 }}>{c.email}</Text>
-                        <Text style={{ color: theme.textSecondary, fontSize: 12 }}>{c.contact}</Text>
-                      </View>
-                    </TouchableOpacity>
-
-                    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
                       <TouchableOpacity
-                        style={styles.iconBtn}
+                        style={{ flex: 1, flexDirection: 'row', alignItems: 'center' }}
                         onPress={() => {
+                          setCaretaker(c);
                           setIsCaretakerManagerOpen(false);
-                          openEditCaretakerModal(c);
                         }}
                       >
-                        <Feather name="edit-2" size={16} color={theme.accent} />
+                        <View style={[styles.avatarSmall, { backgroundColor: isActive ? theme.purple : theme.border }]}>
+                          <Text style={{ color: '#FFF', fontWeight: '700', fontSize: 14 }}>{getInitials(c.name)}</Text>
+                        </View>
+                        <View style={{ flex: 1 }}>
+                          <Text style={{ color: theme.textPrimary, fontWeight: '700', fontSize: 16 }}>
+                            {c.name} {isActive ? '(Active)' : ''}
+                          </Text>
+                          <Text style={{ color: theme.textSecondary, fontSize: 12 }}>{c.email}</Text>
+                          <Text style={{ color: theme.textSecondary, fontSize: 12 }}>{c.contact}</Text>
+                        </View>
                       </TouchableOpacity>
 
-                      {!isActive && (
-                        <TouchableOpacity style={styles.iconBtn} onPress={() => handleDeleteCaretaker(c)}>
-                          <Feather name="trash-2" size={16} color={theme.danger} />
+                      <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                        <TouchableOpacity
+                          style={styles.iconBtn}
+                          onPress={() => {
+                            setIsCaretakerManagerOpen(false);
+                            openEditCaretakerModal(c);
+                          }}
+                        >
+                          <Feather name="edit-2" size={16} color={theme.accent} />
                         </TouchableOpacity>
-                      )}
-                    </View>
-                  </View>
-                );
-              })}
-            </ScrollView>
 
-            <TouchableOpacity
-              style={[styles.submitBtn, { backgroundColor: theme.accent, marginTop: 16 }]}
-              onPress={() => {
-                setIsCaretakerManagerOpen(false);
-                openAddCaretakerModal();
-              }}
-            >
-              <Text style={styles.submitBtnText}>+ Add New Caretaker</Text>
-            </TouchableOpacity>
+                        {!isActive && (
+                          <TouchableOpacity style={styles.iconBtn} onPress={() => handleDeleteCaretaker(c)}>
+                            <Feather name="trash-2" size={16} color={theme.danger} />
+                          </TouchableOpacity>
+                        )}
+                      </View>
+                    </View>
+                  );
+                })}
+              </ScrollView>
+
+              <TouchableOpacity
+                style={[styles.submitBtn, { backgroundColor: theme.accent, marginTop: 16 }]}
+                onPress={() => {
+                  setIsCaretakerManagerOpen(false);
+                  openAddCaretakerModal();
+                }}
+              >
+                <Text style={styles.submitBtnText}>+ Add New Caretaker</Text>
+              </TouchableOpacity>
+            </View>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* ========================================== */}
       {/* MODAL 4: ADD ELDERLY USER MODAL */}
       {/* ========================================== */}
       <Modal visible={isAddUserOpen} animationType="slide" transparent>
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { backgroundColor: theme.cardBg }]}>
-            <View style={styles.modalHeader}>
-              <Text style={[styles.modalTitle, { color: theme.textPrimary }]}>Add Elderly User</Text>
-              <TouchableOpacity onPress={() => setIsAddUserOpen(false)}>
-                <Feather name="x" size={24} color={theme.textSecondary} />
-              </TouchableOpacity>
-            </View>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={{ flex: 1 }}
+        >
+          <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+            <View style={styles.modalOverlay}>
+              <View style={[styles.modalContent, { backgroundColor: theme.cardBg }]}>
+                <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+                  <View style={styles.modalHeader}>
+                    <Text style={[styles.modalTitle, { color: theme.textPrimary }]}>Add Elderly User</Text>
+                    <TouchableOpacity onPress={() => setIsAddUserOpen(false)}>
+                      <Feather name="x" size={24} color={theme.textSecondary} />
+                    </TouchableOpacity>
+                  </View>
 
-            <View style={styles.formGroup}>
-              <Text style={[styles.inputLabel, { color: theme.textSecondary }]}>Full Name</Text>
-              <TextInput
-                style={[styles.input, { color: theme.textPrimary, backgroundColor: theme.inputBg }]}
-                placeholder="e.g. Jane Doe"
-                placeholderTextColor={theme.textSecondary}
-                value={userName}
-                onChangeText={setUserName}
-              />
-            </View>
+                  <View style={styles.formGroup}>
+                    <Text style={[styles.inputLabel, { color: theme.textSecondary }]}>Full Name</Text>
+                    <TextInput
+                      style={[styles.input, { color: theme.textPrimary, backgroundColor: theme.inputBg }]}
+                      placeholder="e.g. Jane Doe"
+                      placeholderTextColor={theme.textSecondary}
+                      value={userName}
+                      onChangeText={setUserName}
+                    />
+                  </View>
 
-            <View style={styles.formGroup}>
-              <Text style={[styles.inputLabel, { color: theme.textSecondary }]}>Age</Text>
-              <TextInput
-                style={[styles.input, { color: theme.textPrimary, backgroundColor: theme.inputBg }]}
-                placeholder="e.g. 78"
-                placeholderTextColor={theme.textSecondary}
-                keyboardType="numeric"
-                value={userAge}
-                onChangeText={setUserAge}
-              />
-            </View>
+                  <View style={styles.formGroup}>
+                    <Text style={[styles.inputLabel, { color: theme.textSecondary }]}>Age</Text>
+                    <TextInput
+                      style={[styles.input, { color: theme.textPrimary, backgroundColor: theme.inputBg }]}
+                      placeholder="e.g. 78"
+                      placeholderTextColor={theme.textSecondary}
+                      keyboardType="numeric"
+                      value={userAge}
+                      onChangeText={setUserAge}
+                    />
+                  </View>
 
-            <View style={styles.formGroup}>
-              <Text style={[styles.inputLabel, { color: theme.textSecondary }]}>Relation</Text>
-              <TextInput
-                style={[styles.input, { color: theme.textPrimary, backgroundColor: theme.inputBg }]}
-                placeholder="e.g. Mother, Father, Grandparent"
-                placeholderTextColor={theme.textSecondary}
-                value={userRelation}
-                onChangeText={setUserRelation}
-              />
-            </View>
+                  <View style={styles.formGroup}>
+                    <Text style={[styles.inputLabel, { color: theme.textSecondary }]}>Relation</Text>
+                    <TextInput
+                      style={[styles.input, { color: theme.textPrimary, backgroundColor: theme.inputBg }]}
+                      placeholder="e.g. Mother, Father, Grandparent"
+                      placeholderTextColor={theme.textSecondary}
+                      value={userRelation}
+                      onChangeText={setUserRelation}
+                    />
+                  </View>
 
-            <View style={styles.formGroup}>
-              <Text style={[styles.inputLabel, { color: theme.textSecondary }]}>Contact Phone</Text>
-              <TextInput
-                style={[styles.input, { color: theme.textPrimary, backgroundColor: theme.inputBg }]}
-                placeholder="e.g. +91 9876543210"
-                placeholderTextColor={theme.textSecondary}
-                keyboardType="phone-pad"
-                value={userContact}
-                onChangeText={setUserContact}
-              />
-            </View>
+                  <View style={styles.formGroup}>
+                    <Text style={[styles.inputLabel, { color: theme.textSecondary }]}>Contact Phone</Text>
+                    <TextInput
+                      style={[styles.input, { color: theme.textPrimary, backgroundColor: theme.inputBg }]}
+                      placeholder="e.g. +91 9876543210"
+                      placeholderTextColor={theme.textSecondary}
+                      keyboardType="phone-pad"
+                      value={userContact}
+                      onChangeText={setUserContact}
+                    />
+                  </View>
 
-            <TouchableOpacity
-              style={[styles.submitBtn, { backgroundColor: theme.accent }]}
-              onPress={handleSaveAddUser}
-              disabled={submitting}
-            >
-              {submitting ? (
-                <ActivityIndicator color="#FFF" />
-              ) : (
-                <Text style={styles.submitBtnText}>Insert Elderly User into DB</Text>
-              )}
-            </TouchableOpacity>
-          </View>
-        </View>
+                  <TouchableOpacity
+                    style={[styles.submitBtn, { backgroundColor: theme.accent }]}
+                    onPress={handleSaveAddUser}
+                    disabled={submitting}
+                  >
+                    {submitting ? (
+                      <ActivityIndicator color="#FFF" />
+                    ) : (
+                      <Text style={styles.submitBtnText}>Insert Elderly User into DB</Text>
+                    )}
+                  </TouchableOpacity>
+                </ScrollView>
+              </View>
+            </View>
+          </TouchableWithoutFeedback>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* ========================================== */}
       {/* MODAL 5: EDIT ELDERLY USER MODAL */}
       {/* ========================================== */}
       <Modal visible={!!editingUser} animationType="slide" transparent>
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { backgroundColor: theme.cardBg }]}>
-            <View style={styles.modalHeader}>
-              <Text style={[styles.modalTitle, { color: theme.textPrimary }]}>Edit Elderly User Profile</Text>
-              <TouchableOpacity onPress={() => setEditingUser(null)}>
-                <Feather name="x" size={24} color={theme.textSecondary} />
-              </TouchableOpacity>
-            </View>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={{ flex: 1 }}
+        >
+          <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+            <View style={styles.modalOverlay}>
+              <View style={[styles.modalContent, { backgroundColor: theme.cardBg }]}>
+                <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+                  <View style={styles.modalHeader}>
+                    <Text style={[styles.modalTitle, { color: theme.textPrimary }]}>Edit Elderly User Profile</Text>
+                    <TouchableOpacity onPress={() => setEditingUser(null)}>
+                      <Feather name="x" size={24} color={theme.textSecondary} />
+                    </TouchableOpacity>
+                  </View>
 
-            <View style={styles.formGroup}>
-              <Text style={[styles.inputLabel, { color: theme.textSecondary }]}>Full Name</Text>
-              <TextInput
-                style={[styles.input, { color: theme.textPrimary, backgroundColor: theme.inputBg }]}
-                value={userName}
-                onChangeText={setUserName}
-              />
-            </View>
+                  <View style={styles.formGroup}>
+                    <Text style={[styles.inputLabel, { color: theme.textSecondary }]}>Full Name</Text>
+                    <TextInput
+                      style={[styles.input, { color: theme.textPrimary, backgroundColor: theme.inputBg }]}
+                      value={userName}
+                      onChangeText={setUserName}
+                    />
+                  </View>
 
-            <View style={styles.formGroup}>
-              <Text style={[styles.inputLabel, { color: theme.textSecondary }]}>Age</Text>
-              <TextInput
-                style={[styles.input, { color: theme.textPrimary, backgroundColor: theme.inputBg }]}
-                keyboardType="numeric"
-                value={userAge}
-                onChangeText={setUserAge}
-              />
-            </View>
+                  <View style={styles.formGroup}>
+                    <Text style={[styles.inputLabel, { color: theme.textSecondary }]}>Age</Text>
+                    <TextInput
+                      style={[styles.input, { color: theme.textPrimary, backgroundColor: theme.inputBg }]}
+                      keyboardType="numeric"
+                      value={userAge}
+                      onChangeText={setUserAge}
+                    />
+                  </View>
 
-            <View style={styles.formGroup}>
-              <Text style={[styles.inputLabel, { color: theme.textSecondary }]}>Relation</Text>
-              <TextInput
-                style={[styles.input, { color: theme.textPrimary, backgroundColor: theme.inputBg }]}
-                value={userRelation}
-                onChangeText={setUserRelation}
-              />
-            </View>
+                  <View style={styles.formGroup}>
+                    <Text style={[styles.inputLabel, { color: theme.textSecondary }]}>Relation</Text>
+                    <TextInput
+                      style={[styles.input, { color: theme.textPrimary, backgroundColor: theme.inputBg }]}
+                      value={userRelation}
+                      onChangeText={setUserRelation}
+                    />
+                  </View>
 
-            <View style={styles.formGroup}>
-              <Text style={[styles.inputLabel, { color: theme.textSecondary }]}>Contact Phone</Text>
-              <TextInput
-                style={[styles.input, { color: theme.textPrimary, backgroundColor: theme.inputBg }]}
-                keyboardType="phone-pad"
-                value={userContact}
-                onChangeText={setUserContact}
-              />
-            </View>
+                  <View style={styles.formGroup}>
+                    <Text style={[styles.inputLabel, { color: theme.textSecondary }]}>Contact Phone</Text>
+                    <TextInput
+                      style={[styles.input, { color: theme.textPrimary, backgroundColor: theme.inputBg }]}
+                      keyboardType="phone-pad"
+                      value={userContact}
+                      onChangeText={setUserContact}
+                    />
+                  </View>
 
-            <TouchableOpacity
-              style={[styles.submitBtn, { backgroundColor: theme.accent }]}
-              onPress={handleSaveEditUser}
-              disabled={submitting}
-            >
-              {submitting ? (
-                <ActivityIndicator color="#FFF" />
-              ) : (
-                <Text style={styles.submitBtnText}>Update Elderly User in DB</Text>
-              )}
-            </TouchableOpacity>
-          </View>
-        </View>
+                  <TouchableOpacity
+                    style={[styles.submitBtn, { backgroundColor: theme.accent }]}
+                    onPress={handleSaveEditUser}
+                    disabled={submitting}
+                  >
+                    {submitting ? (
+                      <ActivityIndicator color="#FFF" />
+                    ) : (
+                      <Text style={styles.submitBtnText}>Update Elderly User in DB</Text>
+                    )}
+                  </TouchableOpacity>
+                </ScrollView>
+              </View>
+            </View>
+          </TouchableWithoutFeedback>
+        </KeyboardAvoidingView>
       </Modal>
     </SafeAreaView>
   );

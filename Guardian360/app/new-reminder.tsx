@@ -37,6 +37,8 @@ export default function NewReminderScreen() {
   const [urgentEnabled, setUrgentEnabled] = useState(false);
   const [category, setCategory] = useState<CategoryType>('MEDS');
   const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
+  const [repeat, setRepeat] = useState<string>('Never');
+  const [isRepeatModalOpen, setIsRepeatModalOpen] = useState(false);
 
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
   const [selectedTime, setSelectedTime] = useState('09:00 AM');
@@ -63,6 +65,16 @@ export default function NewReminderScreen() {
     HABIT: 'Habit',
   };
 
+  const REPEAT_OPTIONS = [
+    { value: 'Never', label: 'Never', sublabel: 'One-time reminder' },
+    { value: 'Daily', label: 'Daily', sublabel: 'Every day' },
+    { value: 'Weekdays', label: 'Weekdays', sublabel: 'Monday through Friday' },
+    { value: 'Weekends', label: 'Weekends', sublabel: 'Saturday and Sunday' },
+    { value: 'Weekly', label: 'Weekly', sublabel: 'Once every week' },
+    { value: 'Bi-weekly', label: 'Bi-weekly', sublabel: 'Once every 2 weeks' },
+    { value: 'Monthly', label: 'Monthly', sublabel: 'Once every month' },
+  ];
+
   const handleSave = async () => {
     if (!selectedUser) {
       Alert.alert('No User Selected', 'Please select a profile first.');
@@ -83,6 +95,7 @@ export default function NewReminderScreen() {
         time: timeEnabled ? selectedTime : undefined,
         urgent: urgentEnabled,
         category: category,
+        repeat: repeat,
       });
       router.back();
     } catch (err: any) {
@@ -196,6 +209,34 @@ export default function NewReminderScreen() {
 
             <View style={[styles.separator, { backgroundColor: theme.separator, marginLeft: 44 }]} />
 
+            {/* Repeat Row */}
+            <TouchableOpacity
+              style={styles.row}
+              onPress={() => setIsRepeatModalOpen(true)}
+              activeOpacity={0.7}
+            >
+              <View style={styles.rowLeft}>
+                <Feather name="repeat" size={18} color={theme.textSecondary} style={styles.rowIcon} />
+                <Text style={[styles.rowLabel, { color: theme.textPrimary }]}>Repeat</Text>
+              </View>
+              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                <Text
+                  style={[
+                    styles.rowValue,
+                    {
+                      color: repeat === 'Never' ? theme.textSecondary : theme.blue,
+                      fontWeight: repeat === 'Never' ? '400' : '600',
+                    },
+                  ]}
+                >
+                  {repeat}
+                </Text>
+                <Feather name="chevron-right" size={18} color={theme.textSecondary} style={{ marginLeft: 4 }} />
+              </View>
+            </TouchableOpacity>
+
+            <View style={[styles.separator, { backgroundColor: theme.separator, marginLeft: 44 }]} />
+
             {/* Urgent Row */}
             <View style={styles.row}>
               <View style={styles.rowLeft}>
@@ -261,6 +302,41 @@ export default function NewReminderScreen() {
             })}
 
             <TouchableOpacity style={styles.modalCloseBtn} onPress={() => setIsCategoryModalOpen(false)}>
+              <Text style={{ color: theme.blue, fontSize: 16, fontWeight: '600' }}>Done</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Repeat Modal */}
+      <Modal visible={isRepeatModalOpen} transparent animationType="slide">
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalCard, { backgroundColor: theme.cardBg }]}>
+            <Text style={[styles.modalTitle, { color: theme.textPrimary }]}>Repeat Frequency</Text>
+
+            {REPEAT_OPTIONS.map((opt) => {
+              const isSelected = repeat === opt.value;
+              return (
+                <TouchableOpacity
+                  key={opt.value}
+                  style={[styles.categoryOption, isSelected && { backgroundColor: isDark ? '#3A3A3C' : '#E5E5EA' }]}
+                  onPress={() => {
+                    setRepeat(opt.value);
+                    setIsRepeatModalOpen(false);
+                  }}
+                >
+                  <View>
+                    <Text style={[styles.categoryOptionText, { color: theme.textPrimary }]}>{opt.label}</Text>
+                    {opt.sublabel ? (
+                      <Text style={{ fontSize: 12, color: theme.textSecondary, marginTop: 2 }}>{opt.sublabel}</Text>
+                    ) : null}
+                  </View>
+                  {isSelected && <Feather name="check" size={20} color={theme.blue} />}
+                </TouchableOpacity>
+              );
+            })}
+
+            <TouchableOpacity style={styles.modalCloseBtn} onPress={() => setIsRepeatModalOpen(false)}>
               <Text style={{ color: theme.blue, fontSize: 16, fontWeight: '600' }}>Done</Text>
             </TouchableOpacity>
           </View>

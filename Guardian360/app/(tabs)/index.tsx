@@ -5,9 +5,17 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Image } from 'expo-image';
 import { Feather, Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import Animated, { FadeInUp } from 'react-native-reanimated';
-import { Audio } from 'expo-av';
 import { useApp } from '@/context/AppContext';
 import { api, ReminderItem, FallRiskItem, LatestSensorData } from '@/services/api';
+import { CognitiveTrendChart } from '@/components/cognitive-trend-chart';
+
+// Safe resolution for expo-av Audio (native module might not be compiled into Expo Go SDK 56+)
+let AudioModule: any = null;
+try {
+  AudioModule = require('expo-av').Audio;
+} catch (e) {
+  console.warn('[Expo AV] ExponentAV native module not available in current environment.');
+}
 
 const { width } = Dimensions.get('window');
 
@@ -25,8 +33,8 @@ export default function HomeScreen() {
 
   // Fall Alert holding state & Audio sound player
   const [isFallAlertActive, setIsFallAlertActive] = useState<boolean>(false);
-  const fallHoldTimerRef = useRef<NodeJS.Timeout | null>(null);
-  const soundRef = useRef<Audio.Sound | null>(null);
+  const fallHoldTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const soundRef = useRef<any>(null);
 
   const theme = {
     background: isDark ? '#000000' : '#F2F2F7',
@@ -57,27 +65,29 @@ export default function HomeScreen() {
       }
     }
 
-    // 2. Native Expo AV Audio
-    try {
-      await Audio.setAudioModeAsync({
-        playsInSilentModeIOS: true,
-        staysActiveInBackground: true,
-        shouldDuckAndroid: true,
-      }).catch(() => {});
+    // 2. Native Expo AV Audio (if supported by current native runtime)
+    if (AudioModule) {
+      try {
+        await AudioModule.setAudioModeAsync({
+          playsInSilentModeIOS: true,
+          staysActiveInBackground: true,
+          shouldDuckAndroid: true,
+        }).catch(() => {});
 
-      if (soundRef.current) {
-        await soundRef.current.stopAsync().catch(() => {});
-        await soundRef.current.unloadAsync().catch(() => {});
+        if (soundRef.current) {
+          await soundRef.current.stopAsync().catch(() => {});
+          await soundRef.current.unloadAsync().catch(() => {});
+        }
+
+        const { sound } = await AudioModule.Sound.createAsync(
+          require('../../assets/sounds/mixkit-classic-alarm-995.mp3'),
+          { shouldPlay: true, volume: 1.0 }
+        );
+        soundRef.current = sound;
+        await sound.playAsync().catch(() => {});
+      } catch (err) {
+        console.warn('[Expo AV] Could not play alarm sound:', err);
       }
-
-      const { sound } = await Audio.Sound.createAsync(
-        require('../../assets/sounds/mixkit-classic-alarm-995.mp3'),
-        { shouldPlay: true, volume: 1.0 }
-      );
-      soundRef.current = sound;
-      await sound.playAsync().catch(() => {});
-    } catch (err) {
-      console.warn('[Expo AV] Could not play alarm sound:', err);
     }
   };
 
@@ -322,20 +332,7 @@ export default function HomeScreen() {
 
         {/* Cognitive Trend Section */}
         <Animated.View entering={FadeInUp.delay(500).duration(800)} style={styles.section}>
-          <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>Cognitive Trend</Text>
-
-          <View
-            style={[
-              styles.largeTrendCard,
-              { backgroundColor: theme.cardBg, borderColor: theme.border, padding: 0, overflow: 'hidden' },
-            ]}
-          >
-            <Image
-              source={{ uri: 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcT6Cai6gSoxEG4G-p-xBq78DTmjMI6P0xYtJzSuLIl5Lw&s' }}
-              style={{ width: '100%', height: 220 }}
-              contentFit="cover"
-            />
-          </View>
+          <CognitiveTrendChart userId={selectedUser?.id} />
           <TouchableOpacity
             style={[styles.showAllButton, { backgroundColor: theme.cardBg, borderColor: theme.border }]}
             onPress={() => router.push('/health-data')}

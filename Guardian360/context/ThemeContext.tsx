@@ -19,7 +19,7 @@ export function AppThemeProvider({ children }: { children: React.ReactNode }) {
   const systemColorScheme = useSystemColorScheme();
   const [theme, setTheme] = useState<ThemeType>('system');
   
-  const activeTheme = theme === 'system' ? (systemColorScheme || 'light') : theme;
+  const activeTheme: 'light' | 'dark' = theme === 'system' ? (systemColorScheme === 'dark' ? 'dark' : 'light') : theme;
 
   return (
     <ThemeContext.Provider value={{ theme, setTheme, activeTheme }}>

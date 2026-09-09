@@ -55,6 +55,7 @@ export interface ReminderItem {
   time?: string | null;
   urgent: boolean;
   category: 'MEDS' | 'TASK' | 'HABIT';
+  repeat?: string | null;
   completed: boolean;
   createdAt?: string;
   updatedAt?: string;
@@ -82,48 +83,76 @@ export interface SensorReadingItem {
 }
 
 export interface LatestSensorData {
+  id?: string;
+  userId?: string;
+  timestamp?: string;
   ax: number;
   ay: number;
   az: number;
   gx: number;
   gy: number;
   gz: number;
-  heartRate: number | null;
-  spo2: number | null;
-  ir: number | null;
-  red: number | null;
+  heartRate?: number;
+  spO2?: number;
+  spo2?: number;
+  ir?: number;
+  red?: number;
   fallDetected?: boolean;
-  timestamp?: string;
+}
+
+export interface VoiceAnalysisRecord {
+  id: string;
+  userId: string;
+  timestamp: string;
+  speechRateWpm: number;
+  pauseFrequency: number;
+  pauseDurationSec?: number;
+  pitchVariability: number;
+  jitterShimmerRatio: number;
+  articulationScore: number;
+  cognitiveHealthScore: number;
+  cognitiveStatus: string;
+  confidenceScore: number;
+}
+
+export interface CognitiveTrendData {
+  userId: string;
+  count: number;
+  averageHealthScore: number;
+  currentStatus: string;
+  latestReport: VoiceAnalysisRecord | null;
+  trends: VoiceAnalysisRecord[];
 }
 
 
 async function request<T>(endpoint: string, options?: RequestInit): Promise<T> {
   const url = `${API_BASE_URL}${endpoint}`;
   try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 8000);
-
-    const response = await fetch(url, {
-      signal: controller.signal,
-      headers: {
-        'Content-Type': 'application/json',
-        ...options?.headers,
-      },
-      ...options,
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      setTimeout(() => {
+        reject(new Error(`Connection timed out to ${url}. Make sure your Express backend server is running on port 5000.`));
+      }, 10000);
     });
-    clearTimeout(timeoutId);
 
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
-    }
+    const fetchPromise = (async () => {
+      const response = await fetch(url, {
+        headers: {
+          'Content-Type': 'application/json',
+          ...options?.headers,
+        },
+        ...options,
+      });
 
-    return await response.json();
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
+      }
+
+      return await response.json();
+    })();
+
+    return await Promise.race([fetchPromise, timeoutPromise]);
   } catch (error: any) {
-    if (error.name === 'AbortError') {
-      console.warn(`[API Timeout ${endpoint}]: Connection timed out to ${url}`);
-      throw new Error(`Connection timed out to ${url}. Make sure your Express backend server is running on port 5000.`);
-    }
     console.warn(`[API Error ${endpoint}]:`, error.message || error);
     throw error;
   }
@@ -178,6 +207,7 @@ export const api = {
       time?: string;
       urgent?: boolean;
       category?: 'MEDS' | 'TASK' | 'HABIT';
+      repeat?: string;
     }
   ) =>
     request<ReminderItem>(`/api/users/${userId}/reminders`, {
@@ -186,7 +216,7 @@ export const api = {
     }),
   patchReminder: (
     reminderId: string,
-    data: { completed?: boolean; title?: string; notes?: string; urgent?: boolean; category?: string }
+    data: { completed?: boolean; title?: string; notes?: string; urgent?: boolean; category?: string; repeat?: string }
   ) =>
     request<ReminderItem>(`/api/reminders/${reminderId}`, {
       method: 'PATCH',
@@ -219,4 +249,22 @@ export const api = {
       body: JSON.stringify(data),
     }),
   getLatestSensorData: () => request<LatestSensorData>('/data'),
+
+  // Voice Analysis & Cognitive Trends (ML Random Forest)
+  getUserCognitiveTrends: (userId: string) => request<CognitiveTrendData>(`/api/users/${userId}/cognitive-trends`),
+  submitVoiceAnalysis: (
+    userId: string,
+    data: {
+      speechRateWpm?: number;
+      pauseDurationSec?: number;
+      pauseFrequency?: number;
+      pitchVariability?: number;
+      jitterShimmerRatio?: number;
+      articulationScore?: number;
+    }
+  ) =>
+    request<{ success: boolean; report: VoiceAnalysisRecord; mlOutput: any }>('/api/voice-analysis', {
+      method: 'POST',
+      body: JSON.stringify({ userId, ...data }),
+    }),
 };

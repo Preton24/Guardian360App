@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Dimensions, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Dimensions, ScrollView, Platform } from 'react-native';
 import { Feather, Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useColorScheme } from '@/hooks/use-color-scheme';
@@ -92,30 +92,38 @@ export default function LocationScreen() {
 
   return (
     <View style={styles.container}>
-      {/* Interactive OpenStreetMap */}
-      <MapView
-        style={StyleSheet.absoluteFillObject}
-        region={region}
-        mapType="none" // Hide default maps
-      >
-        <UrlTile
-          urlTemplate="https://a.tile.openstreetmap.org/{z}/{x}/{y}.png"
-          maximumZ={19}
-          flipY={false}
+      {/* Interactive OpenStreetMap / Native Map */}
+      {Platform.OS === 'web' ? (
+        <iframe
+          src={`https://www.openstreetmap.org/export/embed.html?bbox=${region.longitude - 0.015}%2C${region.latitude - 0.015}%2C${region.longitude + 0.015}%2C${region.latitude + 0.015}&layer=mapnik&marker=${region.latitude}%2C${region.longitude}`}
+          style={{ width: '100%', height: '100%', border: 0 }}
         />
-        {/* Render Family Member Markers */}
-        {familyMembers.map((member) => (
-          <Marker
-            key={member.id}
-            coordinate={{ latitude: member.location.lat, longitude: member.location.lng }}
-            title={member.name}
-          >
-             <View style={[styles.markerPin, { backgroundColor: theme.accent }]}>
+      ) : (
+        <MapView
+          style={StyleSheet.absoluteFill}
+          region={region}
+          showsUserLocation={true}
+          showsCompass={true}
+        >
+          <UrlTile
+            urlTemplate="https://c.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png"
+            maximumZ={19}
+            tileSize={256}
+          />
+          {/* Render Family Member Markers */}
+          {familyMembers.map((member) => (
+            <Marker
+              key={member.id}
+              coordinate={{ latitude: member.location.lat, longitude: member.location.lng }}
+              title={member.name}
+            >
+              <View style={[styles.markerPin, { backgroundColor: theme.accent }]}>
                 <Ionicons name="person" size={20} color="#FFF" />
-             </View>
-          </Marker>
-        ))}
-      </MapView>
+              </View>
+            </Marker>
+          ))}
+        </MapView>
+      )}
 
       <SafeAreaView style={styles.safeArea} pointerEvents="box-none" edges={['top']}>
         {/* Floating Header Back Button */}
@@ -129,13 +137,13 @@ export default function LocationScreen() {
 
         {/* Back Button - Shows when viewing family member's location */}
         {!isViewingMyLocation && (
-            <View style={styles.focusBackWrapper}>
-                <TouchableOpacity activeOpacity={0.8} onPress={focusMyLocation}>
-                    <BlurView intensity={80} tint={theme.blurTint} style={styles.iconButton}>
-                        <Feather name="crosshair" size={20} color={theme.accent} />
-                    </BlurView>
-                </TouchableOpacity>
-            </View>
+          <View style={styles.focusBackWrapper}>
+            <TouchableOpacity activeOpacity={0.8} onPress={focusMyLocation}>
+              <BlurView intensity={80} tint={theme.blurTint} style={styles.iconButton}>
+                <Feather name="crosshair" size={20} color={theme.accent} />
+              </BlurView>
+            </TouchableOpacity>
+          </View>
         )}
 
         <View style={{ flex: 1 }} />
@@ -149,7 +157,7 @@ export default function LocationScreen() {
               <View style={styles.detailView}>
                 <View style={styles.detailHeader}>
                   <Text style={[styles.detailTitle, { color: theme.textPrimary }]} numberOfLines={2}>
-                    {selectedMember.email}
+                    {selectedMember.name}
                   </Text>
                   <TouchableOpacity style={[styles.closeButton, { backgroundColor: isDark ? '#333' : '#E5E5EA' }]} onPress={() => setSelectedMember(null)}>
                     <Feather name="x" size={20} color={theme.textPrimary} />
