@@ -270,10 +270,150 @@ app.delete("/api/users/:userId", async (req, res) => {
 // REMINDERS ENDPOINTS
 // ==========================================
 
-// Get reminders for a user
+/**
+ * Automatically checks and unchecks repeating reminders when a new day arrives.
+ * For daily/weekday/weekend/weekly/monthly routines that were marked completed on a prior date,
+ * this resets `completed = false` and advances `date` to today so the user can check it again today.
+ */
+async function syncRepeatingReminders(userId, clientDateStr, tzOffsetMinutes) {
+  try {
+    const reminders = await prisma.reminder.findMany({
+      where: {
+        userId,
+        repeat: {
+          not: "Never"
+        }
+      }
+    });
+
+    if (!reminders || reminders.length === 0) return;
+
+    const now = new Date();
+    let todayStr;
+    let currentDayOfWeek;
+
+    if (clientDateStr && /^\d{4}-\d{2}-\d{2}$/.test(clientDateStr)) {
+      todayStr = clientDateStr;
+      const parts = clientDateStr.split("-").map(Number);
+      const localDateObj = new Date(parts[0], parts[1] - 1, parts[2]);
+      currentDayOfWeek = localDateObj.getDay();
+    } else if (tzOffsetMinutes !== undefined && tzOffsetMinutes !== null && !isNaN(Number(tzOffsetMinutes))) {
+      const offsetMs = Number(tzOffsetMinutes) * 60 * 1000;
+      const clientNow = new Date(now.getTime() - offsetMs);
+      todayStr = clientNow.toISOString().split("T")[0];
+      currentDayOfWeek = clientNow.getUTCDay();
+    } else {
+      todayStr = now.toISOString().split("T")[0];
+      currentDayOfWeek = now.getDay();
+    }
+
+    const todayDateObj = new Date(todayStr + "T00:00:00.000Z");
+    const updates = [];
+
+    for (const reminder of reminders) {
+      const repeatRule = reminder.repeat;
+      if (!repeatRule || repeatRule === "Never") continue;
+
+      let completedDateStr = null;
+      if (reminder.completed && reminder.updatedAt) {
+        if (tzOffsetMinutes !== undefined && tzOffsetMinutes !== null && !isNaN(Number(tzOffsetMinutes))) {
+          const offsetMs = Number(tzOffsetMinutes) * 60 * 1000;
+          const completedLocal = new Date(reminder.updatedAt.getTime() - offsetMs);
+          completedDateStr = completedLocal.toISOString().split("T")[0];
+        } else {
+          completedDateStr = reminder.updatedAt.toISOString().split("T")[0];
+        }
+      }
+
+      let shouldUncheck = false;
+
+      if (reminder.completed && completedDateStr) {
+        if (completedDateStr < todayStr) {
+          switch (repeatRule) {
+            case "Daily":
+              shouldUncheck = true;
+              break;
+            case "Weekdays":
+              if (currentDayOfWeek >= 1 && currentDayOfWeek <= 5) {
+                shouldUncheck = true;
+              }
+              break;
+            case "Weekends":
+              if (currentDayOfWeek === 0 || currentDayOfWeek === 6) {
+                shouldUncheck = true;
+              }
+              break;
+            case "Weekly": {
+              const compDate = new Date(completedDateStr);
+              const currDate = new Date(todayStr);
+              const diffDays = Math.floor((currDate - compDate) / (1000 * 60 * 60 * 24));
+              if (diffDays >= 7) shouldUncheck = true;
+              break;
+            }
+            case "Bi-weekly": {
+              const compDate = new Date(completedDateStr);
+              const currDate = new Date(todayStr);
+              const diffDays = Math.floor((currDate - compDate) / (1000 * 60 * 60 * 24));
+              if (diffDays >= 14) shouldUncheck = true;
+              break;
+            }
+            case "Monthly": {
+              const compDate = new Date(completedDateStr);
+              const currDate = new Date(todayStr);
+              const diffMonths =
+                (currDate.getFullYear() - compDate.getFullYear()) * 12 +
+                (currDate.getMonth() - compDate.getMonth());
+              if (diffMonths >= 1) shouldUncheck = true;
+              break;
+            }
+            default:
+              break;
+          }
+        }
+      } else if (!reminder.completed) {
+        // If uncompleted and date is in past for Daily reminder, bring scheduled date to today
+        const scheduledDateStr = reminder.date ? new Date(reminder.date).toISOString().split("T")[0] : null;
+        if (scheduledDateStr && scheduledDateStr < todayStr && repeatRule === "Daily") {
+          updates.push(
+            prisma.reminder.update({
+              where: { id: reminder.id },
+              data: { date: todayDateObj }
+            })
+          );
+        }
+      }
+
+      if (shouldUncheck) {
+        updates.push(
+          prisma.reminder.update({
+            where: { id: reminder.id },
+            data: {
+              completed: false,
+              date: todayDateObj
+            }
+          })
+        );
+      }
+    }
+
+    if (updates.length > 0) {
+      await Promise.all(updates);
+      console.log(`[Reminders Sync] Auto-unchecked and rolled over ${updates.length} repeating reminders for user ${userId} on ${todayStr}`);
+    }
+  } catch (err) {
+    console.error("[Reminders Sync] Error syncing repeating reminders:", err.message || err);
+  }
+}
+
+// Get reminders for a user (with auto-uncheck rollover for repeating routines)
 app.get("/api/users/:userId/reminders", async (req, res) => {
   const { userId } = req.params;
+  const { clientDate, localDate, tzOffset } = req.query;
+
   try {
+    // Automatically uncheck repeating reminders completed prior to today
+    await syncRepeatingReminders(userId, clientDate || localDate, tzOffset);
+
     const reminders = await prisma.reminder.findMany({
       where: { userId },
       orderBy: { createdAt: "desc" }
@@ -282,6 +422,38 @@ app.get("/api/users/:userId/reminders", async (req, res) => {
   } catch (error) {
     console.error("Error fetching reminders:", error.message || error);
     res.status(500).json({ error: "Failed to fetch reminders" });
+  }
+});
+
+// Explicitly reset/renew repeating reminders for today
+app.post("/api/users/:userId/reminders/reset-repeating", async (req, res) => {
+  const { userId } = req.params;
+  const { clientDate, localDate } = req.body || {};
+
+  try {
+    const todayStr = clientDate || localDate || new Date().toISOString().split("T")[0];
+    const todayDateObj = new Date(todayStr + "T00:00:00.000Z");
+
+    const result = await prisma.reminder.updateMany({
+      where: {
+        userId,
+        repeat: { not: "Never" }
+      },
+      data: {
+        completed: false,
+        date: todayDateObj
+      }
+    });
+
+    console.log(`[Reminders Sync] Manually reset ${result.count} repeating reminders for user ${userId}`);
+    res.json({
+      success: true,
+      message: `Reset ${result.count} repeating reminders for today`,
+      count: result.count
+    });
+  } catch (error) {
+    console.error("Error resetting repeating reminders:", error.message || error);
+    res.status(500).json({ error: "Failed to reset repeating reminders" });
   }
 });
 

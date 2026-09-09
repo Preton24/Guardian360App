@@ -1,0 +1,8 @@
+{
+  "files.exclude": {
+    "**/__pyrefly_virtual__/**": true
+  },
+  "files.watcherExclude": {
+    "**/__pyrefly_virtual__/**": true
+  }
+}

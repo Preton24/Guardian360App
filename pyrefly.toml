@@ -1,0 +1,11 @@
+preset = "basic"
+
+project-includes = [
+    "voice_assistance/**/*.py",
+    "backend/**/*.py"
+]
+
+project-excludes = [
+    "**/__pyrefly_virtual__/**",
+    "**/node_modules/**"
+]
