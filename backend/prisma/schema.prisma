@@ -6,7 +6,6 @@ datasource db {
   provider = "postgresql"
 }
 
-
 // ===============================
 // ENUMS
 // ===============================
@@ -31,7 +30,6 @@ enum ReminderCategory {
   HABIT
 }
 
-
 // ===============================
 // CARETAKER
 // ===============================
@@ -47,7 +45,6 @@ model Caretaker {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
-
 
 // ===============================
 // ELDERLY USER
@@ -69,7 +66,6 @@ model ElderlyUser {
   updatedAt  DateTime @updatedAt
 }
 
-
 // ===============================
 // CARETAKER ↔ ELDERLY USER
 // ===============================
@@ -79,7 +75,7 @@ model CaretakerUser {
   caretakerId String
   userId      String
 
-  caretaker   Caretaker  @relation(fields: [caretakerId], references: [id], onDelete: Cascade)
+  caretaker   Caretaker   @relation(fields: [caretakerId], references: [id], onDelete: Cascade)
   user        ElderlyUser @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   createdAt   DateTime @default(now())
@@ -88,7 +84,6 @@ model CaretakerUser {
   @@index([caretakerId])
   @@index([userId])
 }
-
 
 // ===============================
 // RAW MPU6050 SENSOR DATA
@@ -115,7 +110,6 @@ model SensorReading {
   @@index([userId, timestamp])
 }
 
-
 // ===============================
 // FALL RISK / AI PREDICTION
 // ===============================
@@ -135,7 +129,6 @@ model FallRisk {
   @@index([userId, timestamp])
 }
 
-
 // ===============================
 // REMINDERS
 // ===============================
@@ -153,6 +146,7 @@ model Reminder {
 
   urgent      Boolean  @default(false)
   category    ReminderCategory
+  repeat      String?  @default("Never")
   completed   Boolean  @default(false)
 
   user        ElderlyUser @relation(fields: [userId], references: [id], onDelete: Cascade)
