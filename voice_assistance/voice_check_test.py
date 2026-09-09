@@ -40,7 +40,7 @@ from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 REMINDERS = [
     {
         "id": 1,
-        "time": "21:23",
+        "time": "00:10",
         "title": "Medicine Reminder",
         "notes": "Please take your evening medicine.",
         "question": "How are you feeling right now?"
@@ -61,7 +61,7 @@ REMINDERS = [
 
 MICROPHONE_INDEX = 2  # Physical Microphone Array index or None for auto-detect
 
-RECORD_SECONDS = 8
+RECORD_SECONDS = 10
 SAMPLE_RATE = 16000
 TEMP_AUDIO_FILE = "user_response.wav"
 OUTPUT_CSV_FILE = "voice_analysis_results.csv"
@@ -117,23 +117,50 @@ def speak(message: str):
 
 
 # --------------------------------------------------
-# 4. MICROPHONE & RECORDING
+# 4. MICROPHONE & RECORDING (AUTO-ADAPTIVE)
 # --------------------------------------------------
 
-def get_physical_microphone_index():
+def get_preferred_microphone_index():
     """
-    Finds the first valid physical microphone (avoiding Stereo Mix).
+    Intelligently auto-detects and adapts to connected audio input hardware:
+    1. Prioritizes connected earphones, headphones, headsets, or bluetooth earbuds.
+    2. Falls back to physical microphone arrays (e.g. laptop Realtek mic).
+    3. Excludes loopbacks like "Stereo Mix".
+    4. Returns None if the Windows default should be used directly.
     """
-    for index, name in enumerate(sr.Microphone.list_microphone_names()):
-        if ("microphone" in name.lower() or "mic" in name.lower()) and "stereo mix" not in name.lower():
-            print(f"Selected Microphone Device [Index {index}]: {name}")
+    try:
+        mic_names = sr.Microphone.list_microphone_names()
+    except Exception:
+        return None
+
+    # Priority 1: Connected earphones, headphones, headsets, bluetooth earbuds
+    earphone_keywords = ["headset", "headphone", "earphone", "bluetooth", "airpod", "buds", "wireless", "usb audio"]
+    for index, name in enumerate(mic_names):
+        name_lower = name.lower()
+        if any(kw in name_lower for kw in earphone_keywords) and "stereo mix" not in name_lower:
+            print(f"[HEADSET] Connected Earphones/Headset detected [Index {index}]: {name}")
             return index
+
+    # Priority 2: Built-in physical microphone array (laptop mic)
+    for index, name in enumerate(mic_names):
+        name_lower = name.lower()
+        if ("microphone array" in name_lower or "mic array" in name_lower) and "stereo mix" not in name_lower:
+            print(f"[MIC ARRAY] Physical Microphone Array selected [Index {index}]: {name}")
+            return index
+
+    # Priority 3: Any physical microphone
+    for index, name in enumerate(mic_names):
+        name_lower = name.lower()
+        if ("microphone" in name_lower or "mic" in name_lower) and "stereo mix" not in name_lower:
+            print(f"[MIC] Microphone device selected [Index {index}]: {name}")
+            return index
+
     return None
 
 
 def record_voice_response():
     """
-    Records voice using the active physical microphone array or default mic.
+    Records voice adapting automatically to earphones, headsets, or built-in mic.
     """
     recognizer = sr.Recognizer()
     recognizer.energy_threshold = 300
@@ -142,11 +169,14 @@ def record_voice_response():
     speak("Please answer after the beep.")
     time.sleep(1)
 
-    print("\nListening through active physical microphone...")
+    print("\nListening through active microphone...")
     print("Speak now...")
 
-    mic_index = MICROPHONE_INDEX if MICROPHONE_INDEX is not None else get_physical_microphone_index()
-    print(f"Using Microphone Device Index: {mic_index}")
+    mic_index = MICROPHONE_INDEX if MICROPHONE_INDEX is not None else get_preferred_microphone_index()
+    if mic_index is not None:
+        print(f"Using Microphone Device Index: {mic_index}")
+    else:
+        print("Using Windows Default Recording Device")
 
     try:
         source_mic = sr.Microphone(device_index=mic_index) if mic_index is not None else sr.Microphone()
@@ -168,12 +198,26 @@ def record_voice_response():
         return TEMP_AUDIO_FILE
 
     except Exception as error:
-        print("Microphone recording error:", error)
+        # Fallback to default system mic if specific index had an issue
+        if mic_index is not None:
+            print(f"Device index {mic_index} error ({error}). Trying Windows default mic...")
+            try:
+                with sr.Microphone() as fallback_source:
+                    recognizer.adjust_for_ambient_noise(fallback_source, duration=0.5)
+                    audio = recognizer.listen(fallback_source, timeout=15, phrase_time_limit=RECORD_SECONDS)
+                with open(TEMP_AUDIO_FILE, "wb") as file:
+                    file.write(audio.get_wav_data())
+                print("Recording completed via fallback default mic.")
+                return TEMP_AUDIO_FILE
+            except Exception as fb_err:
+                print("Fallback recording error:", fb_err)
+        else:
+            print("Microphone recording error:", error)
         return None
 
 
 # --------------------------------------------------
-# 5. SPEECH TO TEXT (GOOGLE ASR - NO WHISPER)
+# 5. SPEECH TO TEXT (GOOGLE ASR)
 # --------------------------------------------------
 
 def speech_to_text(audio_file):
@@ -891,18 +935,37 @@ def run_reminder_session(reminder):
             "articulationScore": art_score,
         }
 
-        ml_result = voice_model.train_and_predict(ml_input)
+        # Dynamically resolve active user ID from backend so mobile app chart updates for active patient
+        target_user_id = "a263f382-f9e2-4aba-b571-1c479d20a575"
+        patient_name = "Arthur Pendelton"
+        try:
+            import urllib.request
+            import json
+            req_c = urllib.request.Request("http://localhost:5000/api/caretakers/current", headers={"User-Agent": "VoiceCheck/1.0"})
+            with urllib.request.urlopen(req_c, timeout=1.5) as resp_c:
+                c_data = json.loads(resp_c.read().decode("utf-8"))
+                c_id = c_data.get("id")
+                if c_id:
+                    req_u = urllib.request.Request(f"http://localhost:5000/api/caretakers/{c_id}/users", headers={"User-Agent": "VoiceCheck/1.0"})
+                    with urllib.request.urlopen(req_u, timeout=1.5) as resp_u:
+                        users_list = json.loads(resp_u.read().decode("utf-8"))
+                        if users_list and len(users_list) > 0:
+                            target_user_id = users_list[0].get("id", target_user_id)
+                            patient_name = users_list[0].get("name", patient_name)
+        except Exception:
+            pass
 
         backend_csv_path = os.path.join(sys_path_backend, "voice_analysis_reports.csv")
         report_id = f"VAR-{int(time.time() * 1000) % 1000000}"
         iso_timestamp = now.strftime("%Y-%m-%dT%H:%M:%S.000Z")
 
-        csv_row = f"{report_id},default-user-id,{iso_timestamp},{wpm},{pause_sec},{pitch_var},{js_ratio},{art_score},{ml_result['cognitiveHealthScore']},{ml_result['cognitiveStatus']},{ml_result['confidenceScore']}\n"
+        csv_row = f"{report_id},{target_user_id},{iso_timestamp},{wpm},{pause_sec},{pitch_var},{js_ratio},{art_score},{ml_result['cognitiveHealthScore']},{ml_result['cognitiveStatus']},{ml_result['confidenceScore']}\n"
 
         with open(backend_csv_path, "a", encoding="utf-8") as backend_csv:
             backend_csv.write(csv_row)
 
         print("\n🧠 Random Forest ML Cognitive Analysis:")
+        print(f"   • Patient: {patient_name} ({target_user_id})")
         print(f"   • Cognitive Health Score: {ml_result['cognitiveHealthScore']}%")
         print(f"   • Cognitive Risk Status: {ml_result['cognitiveStatus']}")
         print(f"   • Updated Backend CSV: {backend_csv_path}")
