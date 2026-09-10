@@ -1,0 +1,5 @@
+# Guardian360 - Root Project Requirements
+# Installs all Python dependencies required across voice_assistance and backend ML services
+
+-r voice_assistance/requirements.txt
+-r backend/requirements.txt

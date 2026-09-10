@@ -935,6 +935,8 @@ def run_reminder_session(reminder):
             "articulationScore": art_score,
         }
 
+        ml_result = voice_model.train_and_predict(ml_input)
+
         # Dynamically resolve active user ID from backend so mobile app chart updates for active patient
         target_user_id = "a263f382-f9e2-4aba-b571-1c479d20a575"
         patient_name = "Arthur Pendelton"

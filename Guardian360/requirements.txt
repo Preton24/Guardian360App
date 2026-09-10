@@ -1,0 +1,10 @@
+# Guardian360 - Mobile App Frontend (Expo / React Native)
+# Note: The mobile application is built using Node.js & Expo/React Native.
+# Dependencies are managed via npm / package.json.
+#
+# To install mobile app dependencies, run:
+#   cd Guardian360
+#   npm install
+#
+# Optional Python utilities for React Native / Expo development (e.g. build scripts):
+# (No mandatory Python packages required for the frontend app)

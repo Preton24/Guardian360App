@@ -1,0 +1,24 @@
+# Guardian360 - Voice Assistance & Cognitive Analysis Requirements
+# Core numerical and data processing
+numpy>=1.24.0
+scipy>=1.10.0
+pandas>=2.0.0
+
+# Machine Learning & NLP
+scikit-learn>=1.3.0
+joblib>=1.3.0
+vaderSentiment>=3.3.2
+
+# Audio capture, synthesis, and speech recognition
+pyttsx3>=2.90
+SpeechRecognition>=3.10.0
+sounddevice>=0.4.6
+PyAudio>=0.2.14
+
+# Audio feature extraction and processing
+librosa>=0.10.1
+soundfile>=0.12.1
+
+# Deep Learning / Emotion Analysis (Optional pipeline support)
+transformers>=4.35.0
+torch>=2.1.0

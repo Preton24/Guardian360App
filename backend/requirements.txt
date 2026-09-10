@@ -1,0 +1,3 @@
+# Guardian360 - Backend Python Machine Learning Model Requirements (voice_model.py)
+numpy>=1.24.0
+scikit-learn>=1.3.0
