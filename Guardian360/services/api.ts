@@ -3,15 +3,20 @@ import Constants from 'expo-constants';
 
 // Automatically detect host IP from Web environment, Expo Metro bundler, or fallback to active LAN IP
 const getDevServerUrl = (): string => {
-  // On Web, always communicate with backend via current browser hostname (e.g. localhost or LAN IP)
+  // 1. Highest priority: Explicit environment variable (Vercel, production, or .env)
+  if (process.env.EXPO_PUBLIC_API_URL) {
+    return process.env.EXPO_PUBLIC_API_URL.trim().replace(/\/+$/, '');
+  }
+
+  // 2. On Web during local development:
   if (Platform.OS === 'web') {
-    if (typeof window !== 'undefined' && window.location?.hostname) {
+    if (typeof window !== 'undefined' && window.location?.hostname && window.location.hostname !== 'localhost' && !window.location.hostname.includes('vercel.app')) {
       return `http://${window.location.hostname}:5001`;
     }
     return 'http://localhost:5001';
   }
 
-  // Extract Metro host IP address dynamically across various Expo versions and platforms
+  // 3. Extract Metro host IP address dynamically across various Expo versions and platforms
   const hostUri =
     Constants.expoConfig?.hostUri ||
     (Constants as any).expoGoConfig?.debuggerHost ||
@@ -27,11 +32,7 @@ const getDevServerUrl = (): string => {
     }
   }
 
-  if (process.env.EXPO_PUBLIC_API_URL) {
-    return process.env.EXPO_PUBLIC_API_URL;
-  }
-
-  // Fallback: Use active Mac Wi-Fi LAN IP so physical devices connect seamlessly
+  // 4. Fallback defaults for local development
   return Platform.select({
     android: 'http://192.168.1.105:5001',
     ios: 'http://192.168.1.105:5001',
