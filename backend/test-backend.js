@@ -27,7 +27,7 @@ async function runVerification() {
   // 1. Get current caretaker
   const currentCtRes = await makeRequest({
     hostname: 'localhost',
-    port: 5000,
+    port: 5001,
     path: '/api/caretakers/current',
     method: 'GET',
   });
@@ -37,7 +37,7 @@ async function runVerification() {
   const newCtRes = await makeRequest(
     {
       hostname: 'localhost',
-      port: 5000,
+      port: 5001,
       path: '/api/caretakers',
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -57,7 +57,7 @@ async function runVerification() {
     const updateCtRes = await makeRequest(
       {
         hostname: 'localhost',
-        port: 5000,
+        port: 5001,
         path: `/api/caretakers/${newCtId}`,
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -72,7 +72,7 @@ async function runVerification() {
   // 4. Fetch all caretakers (GET)
   const allCtRes = await makeRequest({
     hostname: 'localhost',
-    port: 5000,
+    port: 5001,
     path: '/api/caretakers',
     method: 'GET',
   });
@@ -83,7 +83,7 @@ async function runVerification() {
   const addUserRes = await makeRequest(
     {
       hostname: 'localhost',
-      port: 5000,
+      port: 5001,
       path: `/api/caretakers/${mainCtId}/users`,
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -102,7 +102,7 @@ async function runVerification() {
   const updateUserRes = await makeRequest(
     {
       hostname: 'localhost',
-      port: 5000,
+      port: 5001,
       path: `/api/users/${userId}`,
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },

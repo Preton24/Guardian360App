@@ -1,13 +1,15 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { View, Text, StyleSheet, ScrollView, Dimensions, TouchableOpacity, ActivityIndicator, RefreshControl } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Dimensions, TouchableOpacity, ActivityIndicator, RefreshControl, Linking, Alert, Modal } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Image } from 'expo-image';
 import { Feather, Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import Animated, { FadeInUp } from 'react-native-reanimated';
+import { BlurView } from 'expo-blur';
 import { useApp } from '@/context/AppContext';
 import { api, ReminderItem, FallRiskItem, LatestSensorData } from '@/services/api';
 import { CognitiveTrendChart } from '@/components/cognitive-trend-chart';
+import { VoiceAssessmentModal } from '@/components/voice-assessment-modal';
 
 // Safe resolution for expo-av Audio (native module might not be compiled into Expo Go SDK 56+)
 let AudioModule: any = null;
@@ -35,6 +37,9 @@ export default function HomeScreen() {
 
   // Fall Alert holding state & Audio sound player
   const [isFallAlertActive, setIsFallAlertActive] = useState<boolean>(false);
+  const [isSimulatingFall, setIsSimulatingFall] = useState<boolean>(false);
+  const [showEmergencyFallDialog, setShowEmergencyFallDialog] = useState<boolean>(false);
+  const [isVoiceModalVisible, setIsVoiceModalVisible] = useState<boolean>(false);
   const fallHoldTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const soundRef = useRef<any>(null);
 
@@ -92,6 +97,80 @@ export default function HomeScreen() {
         console.warn('[Expo AV] Could not play alarm sound:', err);
       }
     }
+  };
+
+  const handleCall = async (phoneNumber: string = '+91 7619359520') => {
+    const cleanNumber = phoneNumber.replace(/[^0-9+]/g, '');
+    const telUrl = `tel:${cleanNumber}`;
+
+    try {
+      const supported = await Linking.canOpenURL(telUrl);
+      if (supported) {
+        await Linking.openURL(telUrl);
+      } else {
+        // Fallback for device/simulator environments
+        Linking.openURL(telUrl).catch(() => {
+          Alert.alert('Phone Call', `Dialing ${phoneNumber}`, [{ text: 'OK' }]);
+        });
+      }
+    } catch (error) {
+      console.warn('Could not launch phone dialer:', error);
+      Alert.alert('Phone Call', `Dialing ${phoneNumber}`);
+    }
+  };
+
+  const handleSimulateFall = async () => {
+    try {
+      setIsSimulatingFall(true);
+      console.log('[Guardian360] 🚨 Initiating Fall Emergency Simulation...');
+
+      // 1. Immediately trigger siren audio & UI alert
+      playAlarmSound();
+      setIsFallAlertActive(true);
+      setShowEmergencyFallDialog(true);
+
+      // 2. Transmit critical sensor telemetry to backend
+      // Backend automatically registers CRITICAL FallRisk in DB and dispatches automated OmniDimension voice call to caretaker
+      await api.simulateSensorData({
+        fallDetected: true,
+        ax: 0.18,
+        ay: 0.24,
+        az: -2.95,
+        gx: 145.0,
+        gy: 230.0,
+        gz: 110.0,
+        location: 'Living Room (Simulated Test)',
+      });
+
+      // 3. Refresh user metrics to show new fall risk in real-time
+      fetchUserMetrics();
+    } catch (err: any) {
+      console.warn('[Fall Simulation Error]:', err);
+    } finally {
+      setIsSimulatingFall(false);
+    }
+  };
+
+  const handleDismissFallEmergency = async () => {
+    setShowEmergencyFallDialog(false);
+    setIsFallAlertActive(false);
+
+    if (soundRef.current) {
+      soundRef.current.stopAsync().catch(() => {});
+    }
+
+    try {
+      await api.simulateSensorData({
+        fallDetected: false,
+        ax: 0.04,
+        ay: 0.08,
+        az: -0.98,
+        gx: 0,
+        gy: 0,
+        gz: 0,
+      });
+      fetchUserMetrics();
+    } catch (e) {}
   };
 
   const fetchUserMetrics = useCallback(async () => {
@@ -204,12 +283,23 @@ export default function HomeScreen() {
                 {selectedUser ? selectedUser.name : 'No User Selected'}
               </Text>
             </View>
-            <TouchableOpacity
-              style={[styles.mapIconBtn, { backgroundColor: theme.cardBg, borderColor: theme.border }]}
-              onPress={() => router.push('/location')}
-            >
-              <Feather name="map" size={22} color={theme.accent} />
-            </TouchableOpacity>
+            <View style={styles.headerActions}>
+              <TouchableOpacity
+                style={[styles.headerCallBtn, { backgroundColor: theme.successBg }]}
+                onPress={() => handleCall('+91 9731933073')}
+                activeOpacity={0.7}
+                accessibilityRole="button"
+                accessibilityLabel="Call +91 9731933073"
+              >
+                <Feather name="phone-call" size={18} color={theme.successText} />
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.mapIconBtn, { backgroundColor: theme.cardBg, borderColor: theme.border }]}
+                onPress={() => router.push('/location')}
+              >
+                <Feather name="map" size={20} color={theme.accent} />
+              </TouchableOpacity>
+            </View>
           </View>
 
           {/* Elderly User Selector Pills */}
@@ -380,18 +470,151 @@ export default function HomeScreen() {
                     {selectedUser.relation} • {selectedUser.age} yrs
                   </Text>
                   <Text style={[styles.caretakerName, { color: theme.textPrimary }]}>{selectedUser.name}</Text>
-                  <Text style={[styles.caretakerRole, { color: theme.textSecondary }]}>{selectedUser.contact}</Text>
+                  <Text style={[styles.caretakerRole, { color: theme.textSecondary }]}>+91 9731933073</Text>
                 </View>
               </View>
-              <View style={[styles.callButton, { backgroundColor: theme.successBg }]}>
+              <TouchableOpacity
+                style={[styles.callButton, { backgroundColor: theme.successBg }]}
+                onPress={() => handleCall('+91 9731933073')}
+                activeOpacity={0.7}
+                accessibilityRole="button"
+                accessibilityLabel="Call +91 9731933073"
+              >
                 <Feather name="phone" size={20} color={theme.successText} />
-              </View>
+              </TouchableOpacity>
             </View>
           </Animated.View>
         )}
 
+        {/* Quick Simulation & Diagnostics Controls */}
+        <Animated.View entering={FadeInUp.delay(700).duration(800)} style={styles.section}>
+          <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>Simulation & Diagnostics</Text>
+
+          <View style={styles.diagnosticActionsContainer}>
+            {/* 1. Simulate Fall Emergency Card */}
+            <View style={[styles.diagnosticCard, { backgroundColor: isDark ? '#261212' : '#FEF2F2', borderColor: '#EF4444' }]}>
+              <View style={styles.diagnosticCardHeader}>
+                <View style={[styles.diagIconBadge, { backgroundColor: 'rgba(239, 68, 68, 0.15)' }]}>
+                  <MaterialCommunityIcons name="alert-octagon" size={24} color="#EF4444" />
+                </View>
+                <View style={[styles.badgePill, { backgroundColor: '#EF4444' }]}>
+                  <Text style={styles.badgePillText}>EMERGENCY TEST</Text>
+                </View>
+              </View>
+              <Text style={[styles.diagTitle, { color: theme.textPrimary }]}>Simulate Fall Emergency</Text>
+              <Text style={[styles.diagSubtitle, { color: theme.textSecondary }]}>
+                Triggers acoustic alarm, registers critical fall telemetry & dispatches automated voice call to caretaker ({caretaker?.contact || '+91 7619359520'}).
+              </Text>
+              <TouchableOpacity
+                style={[styles.simulateFallBtn, { opacity: isSimulatingFall ? 0.7 : 1 }]}
+                onPress={handleSimulateFall}
+                disabled={isSimulatingFall}
+                activeOpacity={0.8}
+              >
+                {isSimulatingFall ? (
+                  <ActivityIndicator size="small" color="#FFF" />
+                ) : (
+                  <>
+                    <MaterialCommunityIcons name="lightning-bolt" size={18} color="#FFF" style={{ marginRight: 6 }} />
+                    <Text style={styles.simulateFallBtnText}>Simulate Fall Incident</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            </View>
+
+            {/* 2. Voice Cognitive Analysis Card */}
+            <View style={[styles.diagnosticCard, { backgroundColor: isDark ? '#14182E' : '#EEF2FF', borderColor: '#6366F1' }]}>
+              <View style={styles.diagnosticCardHeader}>
+                <View style={[styles.diagIconBadge, { backgroundColor: 'rgba(99, 102, 241, 0.15)' }]}>
+                  <MaterialCommunityIcons name="microphone-variant" size={24} color="#6366F1" />
+                </View>
+                <View style={[styles.badgePill, { backgroundColor: '#6366F1' }]}>
+                  <Text style={styles.badgePillText}>AI ML DIAGNOSTIC</Text>
+                </View>
+              </View>
+              <Text style={[styles.diagTitle, { color: theme.textPrimary }]}>Voice Cognitive Analysis</Text>
+              <Text style={[styles.diagSubtitle, { color: theme.textSecondary }]}>
+                Record speech to evaluate verbal cadence, pause intervals, and articulation with Random Forest ML inference.
+              </Text>
+              <TouchableOpacity
+                style={styles.voiceTestBtn}
+                onPress={() => setIsVoiceModalVisible(true)}
+                activeOpacity={0.8}
+              >
+                <Feather name="mic" size={18} color="#FFF" style={{ marginRight: 6 }} />
+                <Text style={styles.voiceTestBtnText}>Start Voice Assessment</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Animated.View>
+
         <View style={{ height: 100 }} />
       </ScrollView>
+
+      {/* Emergency Fall Incident Modal */}
+      <Modal visible={showEmergencyFallDialog} transparent animationType="fade">
+        <View style={styles.emergencyModalOverlay}>
+          <BlurView intensity={50} tint="dark" style={StyleSheet.absoluteFill} />
+          <View style={[styles.emergencyModalCard, { backgroundColor: isDark ? '#1C1C1E' : '#FFFFFF' }]}>
+            <View style={styles.emergencyIconRing}>
+              <MaterialCommunityIcons name="alarm-light" size={42} color="#EF4444" />
+            </View>
+
+            <Text style={[styles.emergencyModalTitle, { color: '#EF4444' }]}>🚨 FALL DETECTED!</Text>
+            <Text style={[styles.emergencyModalSubtitle, { color: theme.textPrimary }]}>
+              A high-impact fall incident has been recorded.
+            </Text>
+
+            <View style={[styles.emergencyDetailBox, { backgroundColor: isDark ? '#2C2C2E' : '#F2F2F7' }]}>
+              <View style={styles.emergencyDetailRow}>
+                <Ionicons name="volume-high" size={18} color="#EF4444" />
+                <Text style={[styles.emergencyDetailText, { color: theme.textPrimary }]}>Acoustic Alarm: ACTIVE</Text>
+              </View>
+              <View style={styles.emergencyDetailRow}>
+                <Feather name="phone-call" size={18} color="#34C759" />
+                <Text style={[styles.emergencyDetailText, { color: theme.textPrimary }]}>
+                  Emergency call dispatched to Caretaker
+                </Text>
+              </View>
+              <Text style={[styles.caretakerContactNote, { color: theme.textSecondary }]}>
+                {caretaker?.name || 'Steve Rogers'} • {caretaker?.contact || '+91 7619359520'}
+              </Text>
+            </View>
+
+            <View style={styles.emergencyActions}>
+              <TouchableOpacity
+                style={[styles.emergencyCallBtn, { backgroundColor: '#34C759' }]}
+                onPress={() => handleCall(caretaker?.contact || '+91 7619359520')}
+                activeOpacity={0.8}
+              >
+                <Feather name="phone" size={18} color="#FFF" style={{ marginRight: 8 }} />
+                <Text style={styles.emergencyCallBtnText}>Call Caretaker Now</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.emergencyDismissBtn, { borderColor: theme.border }]}
+                onPress={handleDismissFallEmergency}
+                activeOpacity={0.7}
+              >
+                <Feather name="check" size={18} color={theme.textPrimary} style={{ marginRight: 6 }} />
+                <Text style={[styles.emergencyDismissBtnText, { color: theme.textPrimary }]}>I'm Safe • Dismiss Alarm</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Voice Assessment Cognitive Modal */}
+      <VoiceAssessmentModal
+        visible={isVoiceModalVisible}
+        onClose={() => setIsVoiceModalVisible(false)}
+        userId={selectedUser?.id}
+        onAnalysisComplete={() => {
+          setCognitiveRefreshTrigger((prev) => prev + 1);
+          fetchUserMetrics();
+        }}
+        isDark={isDark}
+      />
     </View>
   );
 }
@@ -552,5 +775,194 @@ const styles = StyleSheet.create({
     borderRadius: 22,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  headerCallBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  diagnosticActionsContainer: {
+    gap: 16,
+  },
+  diagnosticCard: {
+    borderRadius: 24,
+    borderWidth: 1.5,
+    padding: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+    elevation: 3,
+  },
+  diagnosticCardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  diagIconBadge: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  badgePill: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  badgePillText: {
+    color: '#FFF',
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 0.8,
+  },
+  diagTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    marginBottom: 6,
+  },
+  diagSubtitle: {
+    fontSize: 13,
+    lineHeight: 18,
+    marginBottom: 16,
+  },
+  simulateFallBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#EF4444',
+    paddingVertical: 14,
+    borderRadius: 16,
+    shadowColor: '#EF4444',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  simulateFallBtnText: {
+    color: '#FFF',
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  voiceTestBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#6366F1',
+    paddingVertical: 14,
+    borderRadius: 16,
+    shadowColor: '#6366F1',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  voiceTestBtnText: {
+    color: '#FFF',
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  emergencyModalOverlay: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+  },
+  emergencyModalCard: {
+    width: Math.min(width - 32, 420),
+    borderRadius: 28,
+    padding: 24,
+    alignItems: 'center',
+    shadowColor: '#EF4444',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.3,
+    shadowRadius: 24,
+    elevation: 12,
+    borderWidth: 2,
+    borderColor: '#EF4444',
+  },
+  emergencyIconRing: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: 'rgba(239, 68, 68, 0.15)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  emergencyModalTitle: {
+    fontSize: 24,
+    fontWeight: '800',
+    marginBottom: 6,
+    letterSpacing: -0.5,
+  },
+  emergencyModalSubtitle: {
+    fontSize: 15,
+    textAlign: 'center',
+    marginBottom: 16,
+  },
+  emergencyDetailBox: {
+    width: '100%',
+    padding: 16,
+    borderRadius: 16,
+    marginBottom: 20,
+    gap: 8,
+  },
+  emergencyDetailRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  emergencyDetailText: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  caretakerContactNote: {
+    fontSize: 12,
+    marginTop: 4,
+    paddingLeft: 26,
+  },
+  emergencyActions: {
+    width: '100%',
+    gap: 10,
+  },
+  emergencyCallBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 14,
+    borderRadius: 16,
+    shadowColor: '#34C759',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
+    elevation: 3,
+  },
+  emergencyCallBtnText: {
+    color: '#FFF',
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  emergencyDismissBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 14,
+    borderRadius: 16,
+    borderWidth: 1,
+  },
+  emergencyDismissBtnText: {
+    fontSize: 15,
+    fontWeight: '600',
   },
 });

@@ -1,25 +1,41 @@
 import { Platform } from 'react-native';
 import Constants from 'expo-constants';
 
-// Automatically detect host IP from Expo Metro bundler (e.g. 192.168.0.7:8081 -> http://192.168.0.7:5000)
+// Automatically detect host IP from Web environment, Expo Metro bundler, or fallback to active LAN IP
 const getDevServerUrl = (): string => {
+  // On Web, always communicate with backend via current browser hostname (e.g. localhost or LAN IP)
+  if (Platform.OS === 'web') {
+    if (typeof window !== 'undefined' && window.location?.hostname) {
+      return `http://${window.location.hostname}:5001`;
+    }
+    return 'http://localhost:5001';
+  }
+
+  // Extract Metro host IP address dynamically across various Expo versions and platforms
+  const hostUri =
+    Constants.expoConfig?.hostUri ||
+    (Constants as any).expoGoConfig?.debuggerHost ||
+    (Constants as any).manifest2?.extra?.expoGo?.debuggerHost ||
+    (Constants as any).manifest?.debuggerHost ||
+    (Constants as any).experienceUrl;
+
+  if (hostUri && typeof hostUri === 'string') {
+    const rawHost = hostUri.replace(/^[a-z]+:\/\//i, '');
+    const ip = rawHost.split(':')[0].split('/')[0];
+    if (ip && ip !== 'localhost' && ip !== '127.0.0.1') {
+      return `http://${ip}:5001`;
+    }
+  }
+
   if (process.env.EXPO_PUBLIC_API_URL) {
     return process.env.EXPO_PUBLIC_API_URL;
   }
 
-  // Extract Metro host IP address dynamically when running on physical device / Expo Go
-  const hostUri = Constants.expoConfig?.hostUri || (Constants.manifest as any)?.debuggerHost;
-  if (hostUri) {
-    const ip = hostUri.split(':')[0];
-    if (ip && ip !== 'localhost' && ip !== '127.0.0.1') {
-      return `http://${ip}:5000`;
-    }
-  }
-
-  // Fallback defaults
+  // Fallback: Use active Mac Wi-Fi LAN IP so physical devices connect seamlessly
   return Platform.select({
-    android: 'http://10.0.2.2:5000',
-    default: 'http://localhost:5000',
+    android: 'http://192.168.1.105:5001',
+    ios: 'http://192.168.1.105:5001',
+    default: 'http://localhost:5001',
   }) as string;
 };
 
@@ -113,6 +129,8 @@ export interface VoiceAnalysisRecord {
   cognitiveHealthScore: number;
   cognitiveStatus: string;
   confidenceScore: number;
+  transcribedText?: string;
+  sentiment?: string;
 }
 
 export interface CognitiveTrendData {
@@ -130,7 +148,7 @@ async function request<T>(endpoint: string, options?: RequestInit): Promise<T> {
   try {
     const timeoutPromise = new Promise<never>((_, reject) => {
       setTimeout(() => {
-        reject(new Error(`Connection timed out to ${url}. Make sure your Express backend server is running on port 5000.`));
+        reject(new Error(`Connection timed out to ${url}. Make sure your Express backend server is running on port 5001.`));
       }, 10000);
     });
 
@@ -260,6 +278,11 @@ export const api = {
       body: JSON.stringify(data),
     }),
   getLatestSensorData: () => request<LatestSensorData>('/data'),
+  simulateSensorData: (data: Partial<LatestSensorData> & { fallDetected?: boolean; location?: string }) =>
+    request<{ success: boolean; data: LatestSensorData }>('/data', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
 
   // Voice Analysis & Cognitive Trends (ML Random Forest)
   getUserCognitiveTrends: (userId: string) => request<CognitiveTrendData>(`/api/users/${userId}/cognitive-trends`),
@@ -272,6 +295,8 @@ export const api = {
       pitchVariability?: number;
       jitterShimmerRatio?: number;
       articulationScore?: number;
+      transcribedText?: string;
+      sentiment?: string;
     }
   ) =>
     request<{ success: boolean; report: VoiceAnalysisRecord; mlOutput: any }>('/api/voice-analysis', {
