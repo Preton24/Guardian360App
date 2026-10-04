@@ -55,9 +55,11 @@ export default function StatsScreen() {
     try {
       setLoading(true);
       const data = await api.getUserReminders(selectedUser.id);
-      setReminders(data);
-    } catch (err) {
-      console.error('Error fetching reminders for stats:', err);
+      setReminders(Array.isArray(data) ? data : []);
+    } catch (err: any) {
+      console.warn('[Stats] Notice fetching reminders:', err?.message || err);
+      // Keep existing reminders or default empty array instead of triggering RedBox
+      setReminders((prev) => (prev.length > 0 ? prev : []));
     } finally {
       setLoading(false);
     }
@@ -81,7 +83,7 @@ export default function StatsScreen() {
   const getReminderDateStr = (r: ReminderItem): string => {
     const raw = r.date || r.createdAt;
     if (!raw) return '';
-    return raw.split('T')[0];
+    return typeof raw === 'string' ? raw.split('T')[0] : '';
   };
 
   // Build dynamic routine tabs based strictly on actual reminders/routines in DB
@@ -91,7 +93,7 @@ export default function StatsScreen() {
     ];
 
     // Add unique routine titles actually present in DB reminders for this user
-    const existingTitles = Array.from(new Set(reminders.map((r) => r.title.trim()))).filter(Boolean);
+    const existingTitles = Array.from(new Set(reminders.map((r) => (r.title || '').trim()))).filter(Boolean);
     existingTitles.forEach((t) => {
       const lower = t.toLowerCase();
       let icon = 'check-circle';
@@ -136,9 +138,9 @@ export default function StatsScreen() {
     if (routineId === 'all') return reminders;
     if (routineId.startsWith('title:')) {
       const targetTitle = routineId.replace('title:', '');
-      return reminders.filter((r) => r.title.trim() === targetTitle);
+      return reminders.filter((r) => (r.title || '').trim() === targetTitle);
     }
-    return reminders.filter((r) => r.title.trim() === routineId);
+    return reminders.filter((r) => (r.title || '').trim() === routineId);
   };
 
   const activeReminders = getFilteredReminders(activeRoutine);
@@ -375,13 +377,13 @@ export default function StatsScreen() {
     const grouped: Record<string, { title: string; total: number; completed: number; category: string; repeat: string }> = {};
 
     reminders.forEach((r) => {
-      const key = r.title.trim();
+      const key = (r.title || 'Routine').trim();
       if (!grouped[key]) {
         grouped[key] = {
           title: key,
           total: 0,
           completed: 0,
-          category: r.category,
+          category: r.category || 'TASK',
           repeat: r.repeat || 'Never',
         };
       }

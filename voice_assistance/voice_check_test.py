@@ -30,6 +30,9 @@ from sklearn.metrics import (
 )
 from sklearn.model_selection import RandomizedSearchCV, StratifiedKFold, train_test_split
 from sklearn.pipeline import Pipeline as SklearnPipeline
+from sklearn.exceptions import InconsistentVersionWarning
+import warnings
+warnings.filterwarnings("ignore", category=InconsistentVersionWarning)
 from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 
 
@@ -40,7 +43,7 @@ from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 REMINDERS = [
     {
         "id": 1,
-        "time": "00:10",
+        "time": "00:04",
         "title": "Medicine Reminder",
         "notes": "Please take your evening medicine.",
         "question": "How are you feeling right now?"
@@ -59,7 +62,7 @@ REMINDERS = [
 # 2. BASIC SETTINGS & PATHS
 # --------------------------------------------------
 
-MICROPHONE_INDEX = 2  # Physical Microphone Array index or None for auto-detect
+MICROPHONE_INDEX = None  # None for auto-detect (MacBook mic, headset, or default)
 
 RECORD_SECONDS = 10
 SAMPLE_RATE = 16000
@@ -124,48 +127,56 @@ def get_preferred_microphone_index():
     """
     Intelligently auto-detects and adapts to connected audio input hardware:
     1. Prioritizes connected earphones, headphones, headsets, or bluetooth earbuds.
-    2. Falls back to physical microphone arrays (e.g. laptop Realtek mic).
+    2. Falls back to built-in physical microphone / microphone array.
     3. Excludes loopbacks like "Stereo Mix".
-    4. Returns None if the Windows default should be used directly.
+    4. Returns None if system default input device should be used.
     """
     try:
-        mic_names = sr.Microphone.list_microphone_names()
-    except Exception:
-        return None
+        devices = sd.query_devices()
+        earphone_keywords = ["headset", "headphone", "earphone", "bluetooth", "airpod", "buds", "wireless", "usb audio"]
+        
+        # Priority 1: Connected earphones / headsets
+        for index, dev in enumerate(devices):
+            if dev.get('max_input_channels', 0) > 0:
+                name_lower = dev.get('name', '').lower()
+                if any(kw in name_lower for kw in earphone_keywords) and "stereo mix" not in name_lower:
+                    print(f"[HEADSET] Connected Earphones/Headset detected [Index {index}]: {dev['name']}")
+                    return index
 
-    # Priority 1: Connected earphones, headphones, headsets, bluetooth earbuds
-    earphone_keywords = ["headset", "headphone", "earphone", "bluetooth", "airpod", "buds", "wireless", "usb audio"]
-    for index, name in enumerate(mic_names):
-        name_lower = name.lower()
-        if any(kw in name_lower for kw in earphone_keywords) and "stereo mix" not in name_lower:
-            print(f"[HEADSET] Connected Earphones/Headset detected [Index {index}]: {name}")
-            return index
+        # Priority 2: Built-in laptop / physical microphone
+        for index, dev in enumerate(devices):
+            if dev.get('max_input_channels', 0) > 0:
+                name_lower = dev.get('name', '').lower()
+                if any(kw in name_lower for kw in ["built-in", "macbook", "internal", "microphone array", "mic array"]):
+                    print(f"[MIC] Built-in Microphone selected [Index {index}]: {dev['name']}")
+                    return index
 
-    # Priority 2: Built-in physical microphone array (laptop mic)
-    for index, name in enumerate(mic_names):
-        name_lower = name.lower()
-        if ("microphone array" in name_lower or "mic array" in name_lower) and "stereo mix" not in name_lower:
-            print(f"[MIC ARRAY] Physical Microphone Array selected [Index {index}]: {name}")
-            return index
+        # Priority 3: System default input device
+        default_device = sd.default.device[0]
+        if default_device is not None and default_device >= 0:
+            dev_info = sd.query_devices(default_device)
+            print(f"[MIC] Default Audio Input selected [Index {default_device}]: {dev_info.get('name')}")
+            return default_device
 
-    # Priority 3: Any physical microphone
-    for index, name in enumerate(mic_names):
-        name_lower = name.lower()
-        if ("microphone" in name_lower or "mic" in name_lower) and "stereo mix" not in name_lower:
-            print(f"[MIC] Microphone device selected [Index {index}]: {name}")
-            return index
+    except Exception as e:
+        # Fallback to SpeechRecognition if sounddevice query fails
+        try:
+            mic_names = sr.Microphone.list_microphone_names()
+            for index, name in enumerate(mic_names):
+                name_lower = name.lower()
+                if any(kw in name_lower for kw in ["headset", "earphone", "airpod", "buds", "mic"]):
+                    return index
+        except Exception:
+            pass
 
     return None
 
 
 def record_voice_response():
     """
-    Records voice adapting automatically to earphones, headsets, or built-in mic.
+    Records voice adapting automatically to earphones, headsets, or built-in mic
+    using sounddevice (native macOS Core Audio & cross-platform) with wav export.
     """
-    recognizer = sr.Recognizer()
-    recognizer.energy_threshold = 300
-    recognizer.dynamic_energy_threshold = True
-
     speak("Please answer after the beep.")
     time.sleep(1)
 
@@ -174,46 +185,61 @@ def record_voice_response():
 
     mic_index = MICROPHONE_INDEX if MICROPHONE_INDEX is not None else get_preferred_microphone_index()
     if mic_index is not None:
-        print(f"Using Microphone Device Index: {mic_index}")
+        try:
+            dev_info = sd.query_devices(mic_index)
+            print(f"Using Microphone Device Index: {mic_index} ({dev_info.get('name', 'Unknown')})")
+        except Exception:
+            print(f"Using Microphone Device Index: {mic_index}")
     else:
-        print("Using Windows Default Recording Device")
+        print("Using System Default Recording Device")
 
+    # Primary recorder: sounddevice (natively supported on macOS Core Audio without PyAudio)
     try:
+        audio_data = sd.rec(
+            int(RECORD_SECONDS * SAMPLE_RATE),
+            samplerate=SAMPLE_RATE,
+            channels=1,
+            dtype='int16',
+            device=mic_index
+        )
+        sd.wait()
+        wav.write(TEMP_AUDIO_FILE, SAMPLE_RATE, audio_data)
+        print("Recording completed.")
+        print("Audio saved as:", TEMP_AUDIO_FILE)
+        return TEMP_AUDIO_FILE
+    except Exception as error:
+        print(f"sounddevice recording error on device {mic_index}: {error}. Trying default device...")
+        try:
+            audio_data = sd.rec(
+                int(RECORD_SECONDS * SAMPLE_RATE),
+                samplerate=SAMPLE_RATE,
+                channels=1,
+                dtype='int16'
+            )
+            sd.wait()
+            wav.write(TEMP_AUDIO_FILE, SAMPLE_RATE, audio_data)
+            print("Recording completed via fallback default mic.")
+            print("Audio saved as:", TEMP_AUDIO_FILE)
+            return TEMP_AUDIO_FILE
+        except Exception as fb_err:
+            print("Fallback sounddevice recording error:", fb_err)
+
+    # Optional fallback: speech_recognition Microphone if PyAudio is installed
+    try:
+        recognizer = sr.Recognizer()
         source_mic = sr.Microphone(device_index=mic_index) if mic_index is not None else sr.Microphone()
         with source_mic as source:
             recognizer.adjust_for_ambient_noise(source, duration=0.5)
-
-            audio = recognizer.listen(
-                source,
-                timeout=15,
-                phrase_time_limit=RECORD_SECONDS
-            )
-
+            audio = recognizer.listen(source, timeout=15, phrase_time_limit=RECORD_SECONDS)
         with open(TEMP_AUDIO_FILE, "wb") as file:
             file.write(audio.get_wav_data())
-
-        print("Recording completed.")
-        print("Audio saved as:", TEMP_AUDIO_FILE)
-
+        print("Recording completed via speech_recognition.")
         return TEMP_AUDIO_FILE
+    except Exception as sr_err:
+        print("SpeechRecognition Microphone fallback error:", sr_err)
 
-    except Exception as error:
-        # Fallback to default system mic if specific index had an issue
-        if mic_index is not None:
-            print(f"Device index {mic_index} error ({error}). Trying Windows default mic...")
-            try:
-                with sr.Microphone() as fallback_source:
-                    recognizer.adjust_for_ambient_noise(fallback_source, duration=0.5)
-                    audio = recognizer.listen(fallback_source, timeout=15, phrase_time_limit=RECORD_SECONDS)
-                with open(TEMP_AUDIO_FILE, "wb") as file:
-                    file.write(audio.get_wav_data())
-                print("Recording completed via fallback default mic.")
-                return TEMP_AUDIO_FILE
-            except Exception as fb_err:
-                print("Fallback recording error:", fb_err)
-        else:
-            print("Microphone recording error:", error)
-        return None
+    print("All recording methods failed.")
+    return None
 
 
 # --------------------------------------------------
@@ -943,12 +969,12 @@ def run_reminder_session(reminder):
         try:
             import urllib.request
             import json
-            req_c = urllib.request.Request("http://localhost:5000/api/caretakers/current", headers={"User-Agent": "VoiceCheck/1.0"})
+            req_c = urllib.request.Request("http://localhost:5001/api/caretakers/current", headers={"User-Agent": "VoiceCheck/1.0"})
             with urllib.request.urlopen(req_c, timeout=1.5) as resp_c:
                 c_data = json.loads(resp_c.read().decode("utf-8"))
                 c_id = c_data.get("id")
                 if c_id:
-                    req_u = urllib.request.Request(f"http://localhost:5000/api/caretakers/{c_id}/users", headers={"User-Agent": "VoiceCheck/1.0"})
+                    req_u = urllib.request.Request(f"http://localhost:5001/api/caretakers/{c_id}/users", headers={"User-Agent": "VoiceCheck/1.0"})
                     with urllib.request.urlopen(req_u, timeout=1.5) as resp_u:
                         users_list = json.loads(resp_u.read().decode("utf-8"))
                         if users_list and len(users_list) > 0:

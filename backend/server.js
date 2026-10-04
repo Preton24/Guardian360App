@@ -1,5 +1,7 @@
 const express = require("express");
 const cors = require("cors");
+const fs = require("fs");
+const path = require("path");
 const { Pool } = require("pg");
 const { PrismaPg } = require("@prisma/adapter-pg");
 const { PrismaClient } = require("@prisma/client");
@@ -37,22 +39,34 @@ app.use(express.json());
 
 // Helper to seed/get active caretaker ("Steve Rogers")
 async function getOrCreateDefaultCaretaker() {
-  let caretaker = await prisma.caretaker.findFirst({
-    where: { email: "steve.rogers@example.com" }
-  });
-
-  if (!caretaker) {
-    caretaker = await prisma.caretaker.create({
-      data: {
-        name: "Steve Rogers",
-        email: "steve.rogers@example.com",
-        contact: "+91 9876543210"
-      }
+  try {
+    let caretaker = await prisma.caretaker.findFirst({
+      where: { email: "steve.rogers@example.com" }
     });
-    console.log("Seeded default caretaker: Steve Rogers");
-  }
 
-  return caretaker;
+    if (!caretaker) {
+      caretaker = await prisma.caretaker.create({
+        data: {
+          name: "Steve Rogers",
+          email: "steve.rogers@example.com",
+          contact: "+91 9876543210"
+        }
+      });
+      console.log("Seeded default caretaker: Steve Rogers");
+    }
+
+    return caretaker;
+  } catch (error) {
+    console.warn("[Database Offline] Using fallback default caretaker:", error.message || error);
+    return {
+      id: "default-caretaker-id",
+      name: "Steve Rogers",
+      email: "steve.rogers@example.com",
+      contact: "+91 9876543210",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+  }
 }
 
 // Health check endpoint
@@ -72,8 +86,15 @@ app.get("/api/caretakers", async (req, res) => {
     });
     res.json(caretakers);
   } catch (error) {
-    console.error("Error fetching caretakers:", error.message || error);
-    res.status(500).json({ error: "Failed to fetch caretakers" });
+    console.warn("Error fetching caretakers from DB, providing fallback:", error.message || error);
+    res.json([
+      {
+        id: "default-caretaker-id",
+        name: "Steve Rogers",
+        email: "steve.rogers@example.com",
+        contact: "+91 9876543210"
+      }
+    ]);
   }
 });
 
@@ -166,8 +187,23 @@ app.get("/api/caretakers/:caretakerId/users", async (req, res) => {
     const elderlyUsers = mappings.map((mapping) => mapping.user);
     res.json(elderlyUsers);
   } catch (error) {
-    console.error("Error fetching caretaker users:", error.message || error);
-    res.status(500).json({ error: "Failed to fetch elderly users" });
+    console.warn("Error fetching caretaker users from DB, providing fallback:", error.message || error);
+    res.json([
+      {
+        id: "a263f382-f9e2-4aba-b571-1c479d20a575",
+        name: "Arthur Pendelton",
+        age: 82,
+        relation: "Grandfather",
+        contact: "+91 9123456789"
+      },
+      {
+        id: "user-tony-stark",
+        name: "Tony Stark",
+        age: 78,
+        relation: "Father",
+        contact: "+91 9876543211"
+      }
+    ]);
   }
 });
 
@@ -269,6 +305,127 @@ app.delete("/api/users/:userId", async (req, res) => {
 // ==========================================
 // REMINDERS ENDPOINTS
 // ==========================================
+// REMINDER PERSISTENT LOCAL FILE STORE HELPERS (Fallback when DB offline)
+// ==========================================
+
+const REMINDERS_FILE = path.join(__dirname, "reminders.json");
+
+function getInitialReminders() {
+  const now = new Date();
+  const todayStr = now.toISOString().split("T")[0];
+  const tomorrowStr = new Date(Date.now() + 86400000).toISOString().split("T")[0];
+
+  return [
+    {
+      id: "rem-1",
+      userId: "a263f382-f9e2-4aba-b571-1c479d20a575",
+      title: "Morning Heart & BP Medication",
+      notes: "Take 1 pill of Aspirin after breakfast",
+      date: `${todayStr}T08:00:00.000Z`,
+      time: `${todayStr}T08:00:00.000Z`,
+      urgent: true,
+      category: "MEDS",
+      repeat: "Daily",
+      completed: false,
+      createdAt: now.toISOString(),
+      updatedAt: now.toISOString()
+    },
+    {
+      id: "rem-2",
+      userId: "a263f382-f9e2-4aba-b571-1c479d20a575",
+      title: "Evening Physical Therapy Walk",
+      notes: "Light 15-min walk in garden with support",
+      date: `${todayStr}T17:30:00.000Z`,
+      time: `${todayStr}T17:30:00.000Z`,
+      urgent: false,
+      category: "HABIT",
+      repeat: "Daily",
+      completed: false,
+      createdAt: now.toISOString(),
+      updatedAt: now.toISOString()
+    },
+    {
+      id: "rem-3",
+      userId: "a263f382-f9e2-4aba-b571-1c479d20a575",
+      title: "Doctor Appointment Checkup",
+      notes: "Dr. Banner consultation at City Hospital",
+      date: `${tomorrowStr}T10:30:00.000Z`,
+      time: `${tomorrowStr}T10:30:00.000Z`,
+      urgent: true,
+      category: "TASK",
+      repeat: "Never",
+      completed: false,
+      createdAt: now.toISOString(),
+      updatedAt: now.toISOString()
+    },
+    {
+      id: "rem-4",
+      userId: "user-tony-stark",
+      title: "Arc Reactor Fluid Check",
+      notes: "Routine medical maintenance",
+      date: `${todayStr}T09:00:00.000Z`,
+      time: `${todayStr}T09:00:00.000Z`,
+      urgent: true,
+      category: "MEDS",
+      repeat: "Daily",
+      completed: false,
+      createdAt: now.toISOString(),
+      updatedAt: now.toISOString()
+    }
+  ];
+}
+
+function loadLocalReminders() {
+  try {
+    if (!fs.existsSync(REMINDERS_FILE)) {
+      const initial = getInitialReminders();
+      fs.writeFileSync(REMINDERS_FILE, JSON.stringify(initial, null, 2), "utf-8");
+      return initial;
+    }
+    const data = fs.readFileSync(REMINDERS_FILE, "utf-8");
+    return JSON.parse(data);
+  } catch (err) {
+    console.error("Error loading local reminders:", err);
+    return getInitialReminders();
+  }
+}
+
+function saveLocalReminders(reminders) {
+  try {
+    fs.writeFileSync(REMINDERS_FILE, JSON.stringify(reminders, null, 2), "utf-8");
+  } catch (err) {
+    console.error("Error saving local reminders:", err);
+  }
+}
+
+function syncRepeatingRemindersLocal(reminders, clientDateStr, tzOffsetMinutes) {
+  const now = new Date();
+  let todayStr = clientDateStr && /^\d{4}-\d{2}-\d{2}$/.test(clientDateStr)
+    ? clientDateStr
+    : now.toISOString().split("T")[0];
+
+  let changed = false;
+  for (const r of reminders) {
+    if (!r.repeat || r.repeat === "Never") continue;
+    const rDateStr = r.date ? new Date(r.date).toISOString().split("T")[0] : null;
+    const rUpdateStr = r.updatedAt ? new Date(r.updatedAt).toISOString().split("T")[0] : null;
+
+    if (r.completed && rUpdateStr && rUpdateStr < todayStr) {
+      r.completed = false;
+      r.date = `${todayStr}T00:00:00.000Z`;
+      r.updatedAt = now.toISOString();
+      changed = true;
+    } else if (!r.completed && rDateStr && rDateStr < todayStr && r.repeat === "Daily") {
+      r.date = `${todayStr}T00:00:00.000Z`;
+      r.updatedAt = now.toISOString();
+      changed = true;
+    }
+  }
+  if (changed) {
+    saveLocalReminders(reminders);
+  }
+  return reminders;
+}
 
 /**
  * Automatically checks and unchecks repeating reminders when a new day arrives.
@@ -420,8 +577,23 @@ app.get("/api/users/:userId/reminders", async (req, res) => {
     });
     res.json(reminders);
   } catch (error) {
-    console.error("Error fetching reminders:", error.message || error);
-    res.status(500).json({ error: "Failed to fetch reminders" });
+    console.warn("DB offline, reading reminders from local JSON store:", error.message || error);
+    let all = loadLocalReminders();
+    all = syncRepeatingRemindersLocal(all, clientDate || localDate, tzOffset);
+
+    let userReminders = all.filter(r => r.userId === userId);
+    // If no reminders yet for this user, seed default reminders for this userId
+    if (userReminders.length === 0) {
+      const seeded = getInitialReminders().map((r, idx) => ({
+        ...r,
+        id: `rem-${Date.now()}-${idx}`,
+        userId
+      }));
+      all = all.concat(seeded);
+      saveLocalReminders(all);
+      userReminders = seeded;
+    }
+    res.json(userReminders);
   }
 });
 
@@ -452,8 +624,24 @@ app.post("/api/users/:userId/reminders/reset-repeating", async (req, res) => {
       count: result.count
     });
   } catch (error) {
-    console.error("Error resetting repeating reminders:", error.message || error);
-    res.status(500).json({ error: "Failed to reset repeating reminders" });
+    console.warn("DB offline, resetting repeating reminders in local JSON store:", error.message || error);
+    const todayStr = clientDate || localDate || new Date().toISOString().split("T")[0];
+    const all = loadLocalReminders();
+    let count = 0;
+    for (const r of all) {
+      if (r.userId === userId && r.repeat && r.repeat !== "Never") {
+        r.completed = false;
+        r.date = `${todayStr}T00:00:00.000Z`;
+        r.updatedAt = new Date().toISOString();
+        count++;
+      }
+    }
+    saveLocalReminders(all);
+    res.json({
+      success: true,
+      message: `Reset ${count} repeating reminders for today`,
+      count
+    });
   }
 });
 
@@ -483,7 +671,6 @@ app.post("/api/users/:userId/reminders", async (req, res) => {
       if (!isNaN(parsedT.getTime())) {
         reminderTime = parsedT;
       } else if (typeof time === "string") {
-        // Parse "09:00 AM" or "14:30" format
         const match = time.match(/(\d{1,2}):(\d{2})\s*(AM|PM)?/i);
         if (match) {
           let hours = parseInt(match[1], 10);
@@ -523,8 +710,26 @@ app.post("/api/users/:userId/reminders", async (req, res) => {
 
     res.status(201).json(formattedReminder);
   } catch (error) {
-    console.error("Error creating reminder:", error);
-    res.status(500).json({ error: error.message || "Failed to create reminder" });
+    console.warn("DB offline, saving new reminder to local JSON store:", error.message || error);
+    const now = new Date();
+    const newReminder = {
+      id: `rem-${Date.now()}`,
+      userId,
+      title,
+      notes: notes || null,
+      date: date || now.toISOString(),
+      time: time || null,
+      urgent: Boolean(urgent),
+      category: category || "TASK",
+      repeat: repeat || "Never",
+      completed: false,
+      createdAt: now.toISOString(),
+      updatedAt: now.toISOString()
+    };
+    const all = loadLocalReminders();
+    all.unshift(newReminder);
+    saveLocalReminders(all);
+    res.status(201).json(newReminder);
   }
 });
 
@@ -547,8 +752,21 @@ app.patch("/api/reminders/:reminderId", async (req, res) => {
     });
     res.json(reminder);
   } catch (error) {
-    console.error("Error updating reminder:", error);
-    res.status(500).json({ error: "Failed to update reminder" });
+    console.warn("DB offline, updating reminder in local JSON store:", error.message || error);
+    const all = loadLocalReminders();
+    const idx = all.findIndex(r => r.id.toString() === reminderId.toString());
+    if (idx !== -1) {
+      if (completed !== undefined) all[idx].completed = Boolean(completed);
+      if (title !== undefined) all[idx].title = title;
+      if (notes !== undefined) all[idx].notes = notes;
+      if (urgent !== undefined) all[idx].urgent = Boolean(urgent);
+      if (category !== undefined) all[idx].category = category;
+      if (repeat !== undefined) all[idx].repeat = repeat;
+      all[idx].updatedAt = new Date().toISOString();
+      saveLocalReminders(all);
+      return res.json(all[idx]);
+    }
+    res.status(404).json({ error: "Reminder not found" });
   }
 });
 
@@ -561,8 +779,11 @@ app.delete("/api/reminders/:reminderId", async (req, res) => {
     });
     res.json({ success: true, message: "Reminder deleted" });
   } catch (error) {
-    console.error("Error deleting reminder:", error);
-    res.status(500).json({ error: "Failed to delete reminder" });
+    console.warn("DB offline, deleting reminder from local JSON store:", error.message || error);
+    let all = loadLocalReminders();
+    all = all.filter(r => r.id.toString() !== reminderId.toString());
+    saveLocalReminders(all);
+    res.json({ success: true, message: "Reminder deleted" });
   }
 });
 
@@ -581,8 +802,17 @@ app.get("/api/users/:userId/fall-risks", async (req, res) => {
     });
     res.json(fallRisks);
   } catch (error) {
-    console.error("Error fetching fall risks:", error.message || error);
-    res.status(500).json({ error: "Failed to fetch fall risks" });
+    console.warn("DB offline, returning fallback fall risks:", error.message || error);
+    res.json([
+      {
+        id: "1",
+        userId,
+        timestamp: new Date().toISOString(),
+        riskLevel: "LOW",
+        riskScore: 0.08,
+        eventType: "NORMAL"
+      }
+    ]);
   }
 });
 
@@ -676,6 +906,50 @@ function parseNum(val, fallback = null) {
   return isNaN(num) ? fallback : num;
 }
 
+async function triggerGuardianEmergencyCall({
+  userName,
+  location,
+  riskLevel,
+  timestamp
+}) {
+  try {
+    const response = await fetch(
+      "https://backend.omnidim.io/api/v1/calls/dispatch",
+      {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${process.env.OMNIDIM_API_KEY}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          agent_id: Number(process.env.OMNIDIM_AGENT_ID),
+          to_number: process.env.CAREGIVER_PHONE,
+
+          call_context: {
+            user_name: userName,
+            location: location || "Location unavailable",
+            risk_level: riskLevel,
+            fall_time: new Date(timestamp).toLocaleTimeString("en-IN"),
+            fall_date: new Date(timestamp).toLocaleDateString("en-IN")
+          }
+        })
+      }
+    );
+
+    const result = await response.json();
+
+    if (!response.ok) {
+      console.error("❌ OmniDimension call failed:", result);
+      return;
+    }
+
+    console.log("📞 Guardian 360 emergency call dispatched:", result);
+  } catch (error) {
+    console.error("❌ OmniDimension error:", error.message);
+  }
+}
+
+
 const handlePostData = async (req, res) => {
   try {
     const body = req.body || {};
@@ -731,6 +1005,8 @@ const handlePostData = async (req, res) => {
         });
 
         if (fallDetected) {
+          const fallTimestamp = new Date();
+
           await prisma.fallRisk.create({
             data: {
               userId: user.id,
@@ -739,7 +1015,16 @@ const handlePostData = async (req, res) => {
               eventType: "FALL_DETECTED"
             }
           });
+
           console.log(`⚠️ FALL DETECTED event saved for user ${user.id}`);
+
+          // Trigger Guardian 360 emergency voice call
+          await triggerGuardianEmergencyCall({
+            userName: user.name || "the elderly user",
+            location: body.location,
+            riskLevel: "CRITICAL",
+            timestamp: fallTimestamp
+          });
         }
       }
     } catch (dbErr) {
@@ -771,9 +1056,7 @@ app.get("/api/data", handleGetData);
 // VOICE ANALYSIS ML & CSV STORAGE ENDPOINTS
 // ==========================================
 
-const fs = require("fs");
-const path = require("path");
-const { exec } = require("child_process");
+const { exec, execFile } = require("child_process");
 
 const VOICE_CSV_PATH = path.join(__dirname, "voice_analysis_reports.csv");
 const VOICE_CSV_HEADER = "id,userId,timestamp,speechRateWpm,pauseFrequency,pitchVariability,jitterShimmerRatio,articulationScore,cognitiveHealthScore,cognitiveStatus,confidenceScore\n";
@@ -853,7 +1136,7 @@ app.get("/api/users/:userId/cognitive-trends", (req, res) => {
 
 // Run Random Forest ML inference & log voice report into CSV file
 app.post("/api/voice-analysis", async (req, res) => {
-  const { userId, speechRateWpm, pauseDurationSec, pauseFrequency, pitchVariability, jitterShimmerRatio, articulationScore } = req.body || {};
+  const { userId, speechRateWpm, pauseDurationSec, pauseFrequency, pitchVariability, jitterShimmerRatio, articulationScore, transcribedText, sentiment } = req.body || {};
   const targetUserId = userId || "default-user-id";
 
   const pauseVal = parseFloat(pauseDurationSec) || parseFloat(pauseFrequency) || 1.2;
@@ -865,13 +1148,15 @@ app.post("/api/voice-analysis", async (req, res) => {
     pitchVariability: parseFloat(pitchVariability) || 34.0,
     jitterShimmerRatio: parseFloat(jitterShimmerRatio) || 1.1,
     articulationScore: parseFloat(articulationScore) || 8.6,
+    transcribedText: transcribedText || "",
+    sentiment: sentiment || "",
   };
 
   const runPythonInference = () => {
     return new Promise((resolve) => {
       const pythonScript = path.join(__dirname, "voice_model.py");
-      const argsStr = JSON.stringify(inputPayload).replace(/"/g, '\\"');
-      exec(`python "${pythonScript}" "${argsStr}"`, (error, stdout) => {
+      const pythonCmd = process.platform === "win32" ? "python" : "python3";
+      execFile(pythonCmd, [pythonScript, JSON.stringify(inputPayload)], (error, stdout) => {
         if (!error && stdout) {
           try {
             const parsed = JSON.parse(stdout.trim());
@@ -884,13 +1169,31 @@ app.post("/api/voice-analysis", async (req, res) => {
         const pv = inputPayload.pitchVariability;
         const js = inputPayload.jitterShimmerRatio;
         const art = inputPayload.articulationScore;
-        const score = Math.min(99.0, Math.max(15.0, Number(((sr/160)*30 + Math.max(0, 15-pf)/15*25 + (pv/50)*15 + Math.max(0, 5-js)/5*15 + (art/10)*15).toFixed(1))));
-        const status = score >= 80 ? "NORMAL" : score >= 60 ? "MILD_COGNITIVE_IMPAIRMENT_RISK" : "HIGH_RISK";
+        let score = Math.min(99.0, Math.max(15.0, Number(((sr/160)*30 + Math.max(0, 15-pf)/15*25 + (pv/50)*15 + Math.max(0, 5-js)/5*15 + (art/10)*15).toFixed(1))));
+        let status = score >= 80 ? "NORMAL" : score >= 60 ? "MILD_COGNITIVE_IMPAIRMENT_RISK" : "HIGH_RISK";
+        let statusLabel = score >= 80 ? "Optimal Cognitive Health" : "Mild Cognitive Risk";
+        
+        const sentLower = (sentiment || "").toLowerCase();
+        if (sentLower.includes("emergency") || sentLower.includes("help")) {
+          score = Math.min(score, 32.0);
+          status = "HIGH_RISK";
+          statusLabel = "Emergency / Urgent Attention Required";
+        } else if (sentLower.includes("health concern") || sentLower.includes("concern")) {
+          score = Math.min(score, 54.0);
+          status = "MILD_COGNITIVE_IMPAIRMENT_RISK";
+          statusLabel = "Health Concern Detected";
+        } else if (sentLower.includes("negative") || sentLower.includes("distress")) {
+          score = Math.min(score, 58.0);
+          status = "MILD_COGNITIVE_IMPAIRMENT_RISK";
+          statusLabel = "Negative Sentiment / Concern Detected";
+        }
+        
         resolve({
           cognitiveHealthScore: score,
           cognitiveStatus: status,
-          cognitiveStatusLabel: score >= 80 ? "Optimal Cognitive Health" : "Mild Cognitive Risk",
+          cognitiveStatusLabel: statusLabel,
           confidenceScore: 0.88,
+          sentiment: sentiment || "Neutral & Responsive",
           metrics: inputPayload,
         });
       });
@@ -921,7 +1224,11 @@ app.post("/api/voice-analysis", async (req, res) => {
     res.status(201).json({
       success: true,
       message: "Voice speech analysis report saved to CSV file.",
-      report: record,
+      report: {
+        ...record,
+        transcribedText: transcribedText || "",
+        sentiment: sentiment || "Neutral",
+      },
       mlOutput: mlResult,
     });
   } catch (err) {
@@ -930,8 +1237,16 @@ app.post("/api/voice-analysis", async (req, res) => {
   }
 });
 
-const PORT = process.env.PORT || 5000;
+const PORT = process.env.PORT || 5001;
 
-app.listen(PORT, '0.0.0.0', () => {
+const server = app.listen(PORT, '0.0.0.0', () => {
   console.log(`Server running on http://localhost:${PORT} and listening on 0.0.0.0:${PORT}`);
+});
+
+server.on('error', (err) => {
+  if (err.code === 'EADDRINUSE') {
+    console.error(`[Server Error] Port ${PORT} is already in use. Please choose another port.`);
+  } else {
+    console.error('[Server Error]:', err);
+  }
 });

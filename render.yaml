@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: guardian360-backend
+    runtime: node
+    plan: free
+    rootDir: backend
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: OMNIDIM_API_KEY
+        sync: false
+      - key: OMNIDIM_AGENT_ID
+        sync: false
+      - key: CAREGIVER_PHONE
+        sync: false
+      - key: NODE_ENV
+        value: production

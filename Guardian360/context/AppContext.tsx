@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { api, Caretaker, ElderlyUser } from '@/services/api';
+import { api, API_BASE_URL, Caretaker, ElderlyUser } from '@/services/api';
 
 interface AppContextType {
   caretaker: Caretaker | null;
@@ -31,25 +31,29 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchUsersForCaretaker = async (cId: string) => {
-    try {
-      const users = await api.getCaretakerUsers(cId);
-      setElderlyUsers(users);
-      if (users.length > 0) {
-        setSelectedUser((prev) => {
-          if (prev) {
-            const match = users.find((u) => u.id === prev.id);
-            return match || users[0];
-          }
-          return users[0];
-        });
-      } else {
-        setSelectedUser(null);
-      }
-    } catch (err) {
-      console.error('Error fetching users for caretaker:', err);
+ const fetchUsersForCaretaker = async (cId: string) => {
+  console.log('Caretaker ID:', cId);
+  console.log('URL:', `${API_BASE_URL}/api/caretakers/${cId}/users`);
+
+  try {
+    const users = await api.getCaretakerUsers(cId);
+    setElderlyUsers(users);
+
+    if (users.length > 0) {
+      setSelectedUser((prev) => {
+        if (prev) {
+          const match = users.find((u) => u.id === prev.id);
+          return match || users[0];
+        }
+        return users[0];
+      });
+    } else {
+      setSelectedUser(null);
     }
-  };
+  } catch (err) {
+    console.error('Error fetching users for caretaker:', err);
+  }
+};
 
   const loadData = useCallback(async () => {
     try {

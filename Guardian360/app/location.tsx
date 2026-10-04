@@ -1,11 +1,11 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Dimensions, ScrollView, Platform } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Dimensions, ScrollView } from 'react-native';
 import { Feather, Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { BlurView } from 'expo-blur';
-import MapView, { UrlTile, Marker } from 'react-native-maps';
+import LocationMap from '@/components/location-map';
 
 import { useApp } from '@/context/AppContext';
 
@@ -92,38 +92,12 @@ export default function LocationScreen() {
 
   return (
     <View style={styles.container}>
-      {/* Interactive OpenStreetMap / Native Map */}
-      {Platform.OS === 'web' ? (
-        <iframe
-          src={`https://www.openstreetmap.org/export/embed.html?bbox=${region.longitude - 0.015}%2C${region.latitude - 0.015}%2C${region.longitude + 0.015}%2C${region.latitude + 0.015}&layer=mapnik&marker=${region.latitude}%2C${region.longitude}`}
-          style={{ width: '100%', height: '100%', border: 0 }}
-        />
-      ) : (
-        <MapView
-          style={StyleSheet.absoluteFill}
-          region={region}
-          showsUserLocation={true}
-          showsCompass={true}
-        >
-          <UrlTile
-            urlTemplate="https://c.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png"
-            maximumZ={19}
-            tileSize={256}
-          />
-          {/* Render Family Member Markers */}
-          {familyMembers.map((member) => (
-            <Marker
-              key={member.id}
-              coordinate={{ latitude: member.location.lat, longitude: member.location.lng }}
-              title={member.name}
-            >
-              <View style={[styles.markerPin, { backgroundColor: theme.accent }]}>
-                <Ionicons name="person" size={20} color="#FFF" />
-              </View>
-            </Marker>
-          ))}
-        </MapView>
-      )}
+      {/* Interactive OpenStreetMap on Web / Native Map on iOS & Android */}
+      <LocationMap
+        region={region}
+        familyMembers={familyMembers}
+        accentColor={theme.accent}
+      />
 
       <SafeAreaView style={styles.safeArea} pointerEvents="box-none" edges={['top']}>
         {/* Floating Header Back Button */}
@@ -440,18 +414,4 @@ const styles = StyleSheet.create({
     padding: 16,
     marginBottom: 8,
   },
-  markerPin: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 2,
-    borderColor: '#FFF',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-    elevation: 4,
-  }
 });
