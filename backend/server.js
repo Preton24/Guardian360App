@@ -37,6 +37,19 @@ const prisma = new PrismaClient({ adapter });
 app.use(cors());
 app.use(express.json());
 
+// Root and health status check endpoints
+app.get("/", (req, res) => {
+  res.json({
+    status: "ok",
+    service: "Guardian360 Backend API",
+    timestamp: new Date().toISOString(),
+  });
+});
+
+app.get("/health", (req, res) => {
+  res.json({ status: "healthy", timestamp: new Date().toISOString() });
+});
+
 // Helper to seed/get active caretaker ("Steve Rogers")
 async function getOrCreateDefaultCaretaker() {
   try {
