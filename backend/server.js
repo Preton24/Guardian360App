@@ -1,3 +1,4 @@
+require("./dns-resolver");
 const express = require("express");
 const cors = require("cors");
 const fs = require("fs");
@@ -926,17 +927,21 @@ async function triggerGuardianEmergencyCall({
   timestamp
 }) {
   try {
+    const apiKey = (process.env.OMNIDIM_API_KEY || "").trim().replace(/^"|"$/g, "");
+    const agentId = Number((process.env.OMNIDIM_AGENT_ID || "").toString().trim());
+    const toNumber = (process.env.CAREGIVER_PHONE || "").trim().replace(/^"|"$/g, "");
+
     const response = await fetch(
       "https://backend.omnidim.io/api/v1/calls/dispatch",
       {
         method: "POST",
         headers: {
-          "Authorization": `Bearer ${process.env.OMNIDIM_API_KEY}`,
+          "Authorization": `Bearer ${apiKey}`,
           "Content-Type": "application/json"
         },
         body: JSON.stringify({
-          agent_id: Number(process.env.OMNIDIM_AGENT_ID),
-          to_number: process.env.CAREGIVER_PHONE,
+          agent_id: agentId,
+          to_number: toNumber,
 
           call_context: {
             user_name: userName,
@@ -962,6 +967,10 @@ async function triggerGuardianEmergencyCall({
   }
 }
 
+
+let cachedElderlyUserId = null;
+let lastDbSensorWrite = 0;
+let lastDbErrorLog = 0;
 
 const handlePostData = async (req, res) => {
   try {
@@ -998,50 +1007,67 @@ const handlePostData = async (req, res) => {
       timestamp: new Date().toISOString()
     };
 
-    // Optionally record MPU6050 reading in DB for active default user if DB is available
-    try {
-      const defaultCaretaker = await prisma.caretaker.findFirst({
-        include: { users: { include: { user: true } } }
+    // If hardware detects a fall, immediately trigger emergency call and alert
+    if (fallDetected) {
+      const fallTimestamp = new Date();
+      console.log("🚨 REAL-TIME FALL DETECTED by Hardware MPU6050!");
+      triggerGuardianEmergencyCall({
+        userName: "the elderly user",
+        location: body.location || "Living Room",
+        riskLevel: "CRITICAL",
+        timestamp: fallTimestamp
+      }).catch((callErr) => {
+        console.error("Notice: Emergency call dispatch error:", callErr.message);
       });
-      const user = defaultCaretaker?.users?.[0]?.user || await prisma.elderlyUser.findFirst();
-      if (user) {
-        await prisma.sensorReading.create({
-          data: {
-            userId: user.id,
-            ax,
-            ay,
-            az,
-            gx,
-            gy,
-            gz
+    }
+
+    // Throttled persistence to database (or immediate on fall detection)
+    const shouldWriteDb = fallDetected || (Date.now() - lastDbSensorWrite > 10000);
+    if (shouldWriteDb) {
+      try {
+        if (!cachedElderlyUserId) {
+          const defaultCaretaker = await prisma.caretaker.findFirst({
+            include: { users: { include: { user: true } } }
+          });
+          const user = defaultCaretaker?.users?.[0]?.user || await prisma.elderlyUser.findFirst();
+          if (user) {
+            cachedElderlyUserId = user.id;
           }
-        });
+        }
 
-        if (fallDetected) {
-          const fallTimestamp = new Date();
-
-          await prisma.fallRisk.create({
+        if (cachedElderlyUserId) {
+          lastDbSensorWrite = Date.now();
+          await prisma.sensorReading.create({
             data: {
-              userId: user.id,
-              riskLevel: "CRITICAL",
-              riskScore: 0.95,
-              eventType: "FALL_DETECTED"
+              userId: cachedElderlyUserId,
+              ax,
+              ay,
+              az,
+              gx,
+              gy,
+              gz
             }
           });
 
-          console.log(`⚠️ FALL DETECTED event saved for user ${user.id}`);
-
-          // Trigger Guardian 360 emergency voice call
-          await triggerGuardianEmergencyCall({
-            userName: user.name || "the elderly user",
-            location: body.location,
-            riskLevel: "CRITICAL",
-            timestamp: fallTimestamp
-          });
+          if (fallDetected) {
+            await prisma.fallRisk.create({
+              data: {
+                userId: cachedElderlyUserId,
+                riskLevel: "CRITICAL",
+                riskScore: 0.95,
+                eventType: "FALL_DETECTED"
+              }
+            });
+            console.log(`⚠️ FALL DETECTED event saved for user ${cachedElderlyUserId}`);
+          }
+        }
+      } catch (dbErr) {
+        cachedElderlyUserId = null;
+        if (Date.now() - lastDbErrorLog > 30000) {
+          lastDbErrorLog = Date.now();
+          console.warn("Notice: Neon DB pool idle/offline. Live sensor reading kept in-memory:", dbErr.message);
         }
       }
-    } catch (dbErr) {
-      console.warn("Notice: Could not persist MPU6050 reading to database:", dbErr.message);
     }
 
     return res.status(201).json({

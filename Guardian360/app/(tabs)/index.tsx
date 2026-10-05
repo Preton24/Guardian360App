@@ -8,16 +8,9 @@ import Animated, { FadeInUp } from 'react-native-reanimated';
 import { BlurView } from 'expo-blur';
 import { useApp } from '@/context/AppContext';
 import { api, ReminderItem, FallRiskItem, LatestSensorData } from '@/services/api';
+import { alarmSound } from '@/services/alarmSound';
 import { CognitiveTrendChart } from '@/components/cognitive-trend-chart';
 import { VoiceAssessmentModal } from '@/components/voice-assessment-modal';
-
-// Safe resolution for expo-av Audio (native module might not be compiled into Expo Go SDK 56+)
-let AudioModule: any = null;
-try {
-  AudioModule = require('expo-av').Audio;
-} catch (e) {
-  console.warn('[Expo AV] ExponentAV native module not available in current environment.');
-}
 
 const { width } = Dimensions.get('window');
 
@@ -41,7 +34,6 @@ export default function HomeScreen() {
   const [showEmergencyFallDialog, setShowEmergencyFallDialog] = useState<boolean>(false);
   const [isVoiceModalVisible, setIsVoiceModalVisible] = useState<boolean>(false);
   const fallHoldTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const soundRef = useRef<any>(null);
 
 
   const theme = {
@@ -55,47 +47,14 @@ export default function HomeScreen() {
     successText: '#34C759',
     alertBg: 'rgba(255, 59, 48, 0.1)',
     alertText: '#FF3B30',
+    inputBg: isDark ? '#2C2C2E' : '#F2F2F7',
   };
 
   const playAlarmSound = async () => {
-    console.log('[Guardian360] 🔊 Playing Fall Emergency Alarm Sound...');
-    // 1. Web Environment Fallback
-    if (typeof window !== 'undefined' && typeof window.Audio !== 'undefined') {
-      try {
-        const webAudio = new window.Audio('https://assets.mixkit.co/active_storage/sfx/995/995-preview.mp3');
-        webAudio.volume = 1.0;
-        const playPromise = webAudio.play();
-        if (playPromise !== undefined) {
-          playPromise.catch((err) => console.warn('[Web Audio] Autoplay error:', err));
-        }
-      } catch (e) {
-        console.warn('[Web Audio] Sound play error:', e);
-      }
-    }
-
-    // 2. Native Expo AV Audio (if supported by current native runtime)
-    if (AudioModule) {
-      try {
-        await AudioModule.setAudioModeAsync({
-          playsInSilentModeIOS: true,
-          staysActiveInBackground: true,
-          shouldDuckAndroid: true,
-        }).catch(() => {});
-
-        if (soundRef.current) {
-          await soundRef.current.stopAsync().catch(() => {});
-          await soundRef.current.unloadAsync().catch(() => {});
-        }
-
-        const { sound } = await AudioModule.Sound.createAsync(
-          require('../../assets/sounds/mixkit-classic-alarm-995.mp3'),
-          { shouldPlay: true, volume: 1.0 }
-        );
-        soundRef.current = sound;
-        await sound.playAsync().catch(() => {});
-      } catch (err) {
-        console.warn('[Expo AV] Could not play alarm sound:', err);
-      }
+    try {
+      await alarmSound.play();
+    } catch (err) {
+      console.warn('[Guardian360] Could not play alarm sound:', err);
     }
   };
 
@@ -155,9 +114,9 @@ export default function HomeScreen() {
     setShowEmergencyFallDialog(false);
     setIsFallAlertActive(false);
 
-    if (soundRef.current) {
-      soundRef.current.stopAsync().catch(() => {});
-    }
+    try {
+      await alarmSound.stop();
+    } catch (_) {}
 
     try {
       await api.simulateSensorData({
@@ -224,7 +183,7 @@ export default function HomeScreen() {
 
   useEffect(() => {
     fetchSensorData();
-    const interval = setInterval(fetchSensorData, 3000);
+    const interval = setInterval(fetchSensorData, 1500);
     return () => clearInterval(interval);
   }, [fetchSensorData]);
 
@@ -244,24 +203,24 @@ export default function HomeScreen() {
         playAlarmSound();
       }
     } else if (isFallAlertActive && !fallHoldTimerRef.current) {
-      // Keep red card alert for extra 1.5 seconds before resetting
+      // Keep red alert active for extra 3 seconds before resetting so it's not missed
       fallHoldTimerRef.current = setTimeout(() => {
         setIsFallAlertActive(false);
         fallHoldTimerRef.current = null;
-      }, 1500);
+      }, 3000);
     }
   }, [rawFallDetected, isFallAlertActive]);
 
   useEffect(() => {
     return () => {
-      if (soundRef.current) {
-        soundRef.current.unloadAsync().catch(() => {});
-      }
+      alarmSound.stop().catch(() => {});
       if (fallHoldTimerRef.current) {
         clearTimeout(fallHoldTimerRef.current);
       }
     };
   }, []);
+
+  const isFall = isFallAlertActive || rawFallDetected;
 
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
@@ -272,6 +231,30 @@ export default function HomeScreen() {
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.accent} />
         }
       >
+        {/* Real-time Emergency Fall Alert Banner */}
+        {(isFallAlertActive || rawFallDetected) && (
+          <Animated.View entering={FadeInUp.duration(300)} style={styles.emergencyTopBanner}>
+            <View style={styles.emergencyTopBannerContent}>
+              <View style={styles.emergencyTopBannerIcon}>
+                <MaterialCommunityIcons name="alarm-light" size={26} color="#FFF" />
+              </View>
+              <View style={{ flex: 1, marginLeft: 12 }}>
+                <Text style={styles.emergencyTopBannerTitle}>🚨 CRITICAL ALERT: FALL DETECTED!</Text>
+                <Text style={styles.emergencyTopBannerSub}>
+                  Hardware motion telemetry recorded an active impact fall. Tap to view emergency details.
+                </Text>
+              </View>
+              <TouchableOpacity
+                style={styles.emergencyTopBannerBtn}
+                onPress={() => setShowEmergencyFallDialog(true)}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.emergencyTopBannerBtnText}>VIEW</Text>
+              </TouchableOpacity>
+            </View>
+          </Animated.View>
+        )}
+
         {/* Top Section */}
         <Animated.View entering={FadeInUp.delay(100).duration(800)} style={styles.header}>
           <View style={styles.headerTop}>
@@ -441,6 +424,114 @@ export default function HomeScreen() {
               </View>
               <Text style={[styles.cardLabel, { color: theme.textSecondary, marginTop: 'auto' }]}>Reminders</Text>
             </TouchableOpacity>
+          </View>
+        </Animated.View>
+
+        {/* Live Hardware Sensor Telemetry (MPU6050 & Hardware Stream) */}
+        <Animated.View entering={FadeInUp.delay(400).duration(800)} style={styles.section}>
+          <View style={styles.sectionHeaderRow}>
+            <Text style={[styles.sectionTitle, { color: theme.textPrimary, marginBottom: 0 }]}>
+              Live Sensor Telemetry
+            </Text>
+            <View style={[styles.liveStatusBadge, { backgroundColor: isFall ? 'rgba(239, 68, 68, 0.15)' : 'rgba(16, 185, 129, 0.15)' }]}>
+              <View style={[styles.liveStatusDot, { backgroundColor: isFall ? '#EF4444' : '#10B981' }]} />
+              <Text style={[styles.liveStatusText, { color: isFall ? '#EF4444' : '#10B981' }]}>
+                {isFall ? 'FALL DETECTED' : 'HARDWARE ACTIVE'}
+              </Text>
+            </View>
+          </View>
+
+          <View style={[styles.telemetryCard, { backgroundColor: theme.cardBg, borderColor: isFall ? '#EF4444' : theme.border, borderWidth: isFall ? 2 : 1 }]}>
+            {/* Realtime Fall Alert Bar inside Card */}
+            <View style={[styles.telemetryStatusBanner, { backgroundColor: isFall ? 'rgba(239, 68, 68, 0.15)' : 'rgba(16, 185, 129, 0.1)' }]}>
+              <MaterialCommunityIcons
+                name={isFall ? 'alert-octagon' : 'check-decagram'}
+                size={20}
+                color={isFall ? '#EF4444' : '#10B981'}
+              />
+              <Text style={[styles.telemetryStatusText, { color: isFall ? '#EF4444' : '#10B981' }]}>
+                {isFall
+                  ? '⚠️ Active Impact Fall Detected! Immediate assistance required.'
+                  : 'Normal Gait & Posture • No Fall Detected'}
+              </Text>
+            </View>
+
+            {/* MPU6050 Accelerometer */}
+            <View style={styles.telemetryBlock}>
+              <View style={styles.telemetryBlockHeader}>
+                <MaterialCommunityIcons name="axis-arrow" size={16} color={theme.accent} />
+                <Text style={[styles.telemetryBlockTitle, { color: theme.textSecondary }]}>
+                  ACCELEROMETER (MPU6050)
+                </Text>
+                <Text style={[styles.telemetryUnit, { color: theme.textSecondary }]}>m/s²</Text>
+              </View>
+              <View style={styles.axisGrid}>
+                <View style={[styles.axisBox, { backgroundColor: theme.inputBg }]}>
+                  <Text style={[styles.axisTag, { color: theme.textSecondary }]}>AX</Text>
+                  <Text style={[styles.axisNum, { color: theme.textPrimary }]}>
+                    {sensorData?.ax !== undefined && sensorData?.ax !== null ? Number(sensorData.ax).toFixed(2) : '0.00'}
+                  </Text>
+                </View>
+                <View style={[styles.axisBox, { backgroundColor: theme.inputBg }]}>
+                  <Text style={[styles.axisTag, { color: theme.textSecondary }]}>AY</Text>
+                  <Text style={[styles.axisNum, { color: theme.textPrimary }]}>
+                    {sensorData?.ay !== undefined && sensorData?.ay !== null ? Number(sensorData.ay).toFixed(2) : '0.00'}
+                  </Text>
+                </View>
+                <View style={[styles.axisBox, { backgroundColor: theme.inputBg }]}>
+                  <Text style={[styles.axisTag, { color: theme.textSecondary }]}>AZ</Text>
+                  <Text style={[styles.axisNum, { color: theme.textPrimary }]}>
+                    {sensorData?.az !== undefined && sensorData?.az !== null ? Number(sensorData.az).toFixed(2) : '9.81'}
+                  </Text>
+                </View>
+              </View>
+            </View>
+
+            {/* MPU6050 Gyroscope */}
+            <View style={styles.telemetryBlock}>
+              <View style={styles.telemetryBlockHeader}>
+                <MaterialCommunityIcons name="compass-outline" size={16} color="#8B5CF6" />
+                <Text style={[styles.telemetryBlockTitle, { color: theme.textSecondary }]}>
+                  GYROSCOPE (MPU6050)
+                </Text>
+                <Text style={[styles.telemetryUnit, { color: theme.textSecondary }]}>°/s</Text>
+              </View>
+              <View style={styles.axisGrid}>
+                <View style={[styles.axisBox, { backgroundColor: theme.inputBg }]}>
+                  <Text style={[styles.axisTag, { color: theme.textSecondary }]}>GX</Text>
+                  <Text style={[styles.axisNum, { color: theme.textPrimary }]}>
+                    {sensorData?.gx !== undefined && sensorData?.gx !== null ? Number(sensorData.gx).toFixed(2) : '0.00'}
+                  </Text>
+                </View>
+                <View style={[styles.axisBox, { backgroundColor: theme.inputBg }]}>
+                  <Text style={[styles.axisTag, { color: theme.textSecondary }]}>GY</Text>
+                  <Text style={[styles.axisNum, { color: theme.textPrimary }]}>
+                    {sensorData?.gy !== undefined && sensorData?.gy !== null ? Number(sensorData.gy).toFixed(2) : '0.00'}
+                  </Text>
+                </View>
+                <View style={[styles.axisBox, { backgroundColor: theme.inputBg }]}>
+                  <Text style={[styles.axisTag, { color: theme.textSecondary }]}>GZ</Text>
+                  <Text style={[styles.axisNum, { color: theme.textPrimary }]}>
+                    {sensorData?.gz !== undefined && sensorData?.gz !== null ? Number(sensorData.gz).toFixed(2) : '0.00'}
+                  </Text>
+                </View>
+              </View>
+            </View>
+
+            {/* Footer with Timestamp */}
+            <View style={[styles.telemetryFooter, { borderTopColor: theme.border }]}>
+              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                <Feather name="clock" size={12} color={theme.textSecondary} style={{ marginRight: 4 }} />
+                <Text style={[styles.telemetryTimestamp, { color: theme.textSecondary }]}>
+                  {sensorData?.timestamp
+                    ? `Live: ${new Date(sensorData.timestamp).toLocaleTimeString()}`
+                    : 'Awaiting hardware data stream...'}
+                </Text>
+              </View>
+              <TouchableOpacity onPress={() => router.push('/health-data')}>
+                <Text style={{ fontSize: 12, fontWeight: '600', color: theme.accent }}>View Details →</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </Animated.View>
 
@@ -964,5 +1055,151 @@ const styles = StyleSheet.create({
   emergencyDismissBtnText: {
     fontSize: 15,
     fontWeight: '600',
+  },
+  emergencyTopBanner: {
+    backgroundColor: '#DC2626',
+    borderRadius: 18,
+    padding: 14,
+    marginBottom: 20,
+    shadowColor: '#DC2626',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4,
+    shadowRadius: 10,
+    elevation: 5,
+  },
+  emergencyTopBannerContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  emergencyTopBannerIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(255, 255, 255, 0.25)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  emergencyTopBannerTitle: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '800',
+    letterSpacing: -0.3,
+  },
+  emergencyTopBannerSub: {
+    color: 'rgba(255, 255, 255, 0.9)',
+    fontSize: 12,
+    marginTop: 2,
+    lineHeight: 16,
+  },
+  emergencyTopBannerBtn: {
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 12,
+    marginLeft: 8,
+  },
+  emergencyTopBannerBtnText: {
+    color: '#DC2626',
+    fontWeight: '800',
+    fontSize: 13,
+  },
+  sectionHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 14,
+  },
+  liveStatusBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 12,
+  },
+  liveStatusDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 3.5,
+    marginRight: 6,
+  },
+  liveStatusText: {
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.3,
+  },
+  telemetryCard: {
+    borderRadius: 24,
+    padding: 18,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  telemetryStatusBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    borderRadius: 14,
+    marginBottom: 16,
+  },
+  telemetryStatusText: {
+    fontSize: 13,
+    fontWeight: '600',
+    marginLeft: 8,
+    flex: 1,
+  },
+  telemetryBlock: {
+    marginBottom: 14,
+  },
+  telemetryBlockHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  telemetryBlockTitle: {
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+    marginLeft: 6,
+    flex: 1,
+  },
+  telemetryUnit: {
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  axisGrid: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  axisBox: {
+    flex: 1,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 14,
+    alignItems: 'center',
+  },
+  axisTag: {
+    fontSize: 11,
+    fontWeight: '700',
+    marginBottom: 2,
+  },
+  axisNum: {
+    fontSize: 15,
+    fontWeight: '700',
+    letterSpacing: -0.3,
+  },
+  telemetryFooter: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingTop: 12,
+    borderTopWidth: 1,
+    marginTop: 4,
+  },
+  telemetryTimestamp: {
+    fontSize: 11,
+    fontWeight: '500',
   },
 });

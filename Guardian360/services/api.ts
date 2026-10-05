@@ -34,8 +34,8 @@ const getDevServerUrl = (): string => {
 
   // 4. Fallback defaults for local development
   return Platform.select({
-    android: 'http://192.168.1.105:5001',
-    ios: 'http://192.168.1.105:5001',
+    android: 'http://10.135.171.100:5001',
+    ios: 'http://10.135.171.100:5001',
     default: 'http://localhost:5001',
   }) as string;
 };
