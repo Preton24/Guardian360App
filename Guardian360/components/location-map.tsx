@@ -1,6 +1,6 @@
 import React from 'react';
 import { View, StyleSheet } from 'react-native';
-import MapView, { UrlTile, Marker } from 'react-native-maps';
+import MapView, { Marker } from 'react-native-maps';
 import { Ionicons } from '@expo/vector-icons';
 
 export interface LocationMapProps {
@@ -26,11 +26,6 @@ export default function LocationMap({ region, familyMembers, accentColor }: Loca
       showsUserLocation={true}
       showsCompass={true}
     >
-      <UrlTile
-        urlTemplate="https://c.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png"
-        maximumZ={19}
-        tileSize={256}
-      />
       {familyMembers.map((member) => (
         <Marker
           key={member.id}

@@ -16,7 +16,28 @@ BigInt.prototype.toJSON = function () {
 const app = express();
 
 const connectionString = process.env.DATABASE_URL;
-const pool = new Pool({ connectionString });
+const pool = new Pool({
+  connectionString,
+  max: 10,
+  idleTimeoutMillis: 30000,
+  connectionTimeoutMillis: 10000,
+});
+
+// Helper to retry database queries on transient connection drops (e.g., Neon serverless auto-suspend / cold start)
+async function dbRetry(fn, retries = 2, delayMs = 600) {
+  let lastErr;
+  for (let i = 0; i <= retries; i++) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastErr = err;
+      if (i < retries) {
+        await new Promise((res) => setTimeout(res, delayMs));
+      }
+    }
+  }
+  throw lastErr;
+}
 
 // Handle PostgreSQL pool background errors (e.g., Neon idle connection timeouts)
 pool.on("error", (err) => {
@@ -54,18 +75,22 @@ app.get("/health", (req, res) => {
 // Helper to seed/get active caretaker ("Steve Rogers")
 async function getOrCreateDefaultCaretaker() {
   try {
-    let caretaker = await prisma.caretaker.findFirst({
-      where: { email: "steve.rogers@example.com" }
-    });
+    let caretaker = await dbRetry(() =>
+      prisma.caretaker.findFirst({
+        where: { email: "steve.rogers@example.com" }
+      })
+    );
 
     if (!caretaker) {
-      caretaker = await prisma.caretaker.create({
-        data: {
-          name: "Steve Rogers",
-          email: "steve.rogers@example.com",
-          contact: "+91 9876543210"
-        }
-      });
+      caretaker = await dbRetry(() =>
+        prisma.caretaker.create({
+          data: {
+            name: "Steve Rogers",
+            email: "steve.rogers@example.com",
+            contact: "+91 9876543210"
+          }
+        })
+      );
       console.log("Seeded default caretaker: Steve Rogers");
     }
 
@@ -95,9 +120,11 @@ app.get("/api/health", (req, res) => {
 // Get all caretakers
 app.get("/api/caretakers", async (req, res) => {
   try {
-    const caretakers = await prisma.caretaker.findMany({
-      orderBy: { createdAt: "asc" }
-    });
+    const caretakers = await dbRetry(() =>
+      prisma.caretaker.findMany({
+        orderBy: { createdAt: "asc" }
+      })
+    );
     res.json(caretakers);
   } catch (error) {
     console.warn("Error fetching caretakers from DB, providing fallback:", error.message || error);
@@ -190,13 +217,15 @@ app.delete("/api/caretakers/:caretakerId", async (req, res) => {
 app.get("/api/caretakers/:caretakerId/users", async (req, res) => {
   const { caretakerId } = req.params;
   try {
-    const mappings = await prisma.caretakerUser.findMany({
-      where: { caretakerId },
-      include: {
-        user: true
-      },
-      orderBy: { createdAt: "asc" }
-    });
+    const mappings = await dbRetry(() =>
+      prisma.caretakerUser.findMany({
+        where: { caretakerId },
+        include: {
+          user: true
+        },
+        orderBy: { createdAt: "asc" }
+      })
+    );
 
     const elderlyUsers = mappings.map((mapping) => mapping.user);
     res.json(elderlyUsers);
