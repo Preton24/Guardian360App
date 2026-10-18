@@ -4,7 +4,7 @@ import { StatusBar } from 'expo-status-bar';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import Animated, { FadeInDown, FadeInUp } from 'react-native-reanimated';
 
-const { width, height } = Dimensions.get('window');
+const { width } = Dimensions.get('window');
 
 export default function WelcomeScreen() {
   const router = useRouter();
@@ -20,7 +20,7 @@ export default function WelcomeScreen() {
       <View style={[styles.circleTwo, { backgroundColor: isDark ? '#818CF8' : '#6366F1', opacity: 0.15 }]} />
 
       <View style={styles.content}>
-        <Animated.View entering={FadeInUp.delay(200).duration(1000)} style={styles.headerContainer}>
+        <Animated.View entering={FadeInUp.delay(200).duration(800)} style={styles.centerContainer}>
           <View
             style={[
               styles.iconContainer,
@@ -36,15 +36,17 @@ export default function WelcomeScreen() {
               resizeMode="contain"
             />
           </View>
+
           <Text style={[styles.title, { color: isDark ? '#F8FAFC' : '#0F172A' }]}>
             Guardian360
           </Text>
+
           <Text style={[styles.subtitle, { color: isDark ? '#94A3B8' : '#64748B' }]}>
             Your ultimate safety and tracking companion. Protect what matters most.
           </Text>
         </Animated.View>
 
-        <Animated.View entering={FadeInDown.delay(600).duration(1000)} style={styles.footerContainer}>
+        <Animated.View entering={FadeInDown.delay(400).duration(800)} style={styles.buttonWrapper}>
           <TouchableOpacity
             style={styles.button}
             activeOpacity={0.8}
@@ -62,27 +64,28 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     overflow: 'hidden',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   content: {
     flex: 1,
     paddingHorizontal: 32,
-    justifyContent: 'space-between',
+    justifyContent: 'center',
     alignItems: 'center',
     alignSelf: 'center',
     width: '100%',
     maxWidth: 480,
-    paddingTop: height * 0.18,
-    paddingBottom: Math.max(height * 0.08, 48),
     zIndex: 10,
   },
-  headerContainer: {
+  centerContainer: {
     alignItems: 'center',
     width: '100%',
+    marginBottom: 36,
   },
   iconContainer: {
-    width: 108,
-    height: 108,
-    borderRadius: 28,
+    width: 112,
+    height: 112,
+    borderRadius: 30,
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 24,
@@ -98,14 +101,14 @@ const styles = StyleSheet.create({
     elevation: 8,
   },
   logoImage: {
-    width: 88,
-    height: 88,
-    borderRadius: 20,
+    width: 92,
+    height: 92,
+    borderRadius: 22,
   },
   title: {
     fontSize: 40,
     fontWeight: '800',
-    marginBottom: 16,
+    marginBottom: 12,
     textAlign: 'center',
     letterSpacing: -1,
   },
@@ -115,8 +118,9 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 24,
     paddingHorizontal: 16,
+    maxWidth: 360,
   },
-  footerContainer: {
+  buttonWrapper: {
     width: '100%',
     alignItems: 'center',
     justifyContent: 'center',
@@ -124,7 +128,7 @@ const styles = StyleSheet.create({
   button: {
     backgroundColor: '#0EA5E9',
     paddingVertical: 18,
-    paddingHorizontal: 36,
+    paddingHorizontal: 40,
     borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
