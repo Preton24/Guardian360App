@@ -20,24 +20,26 @@ export interface LocationMapProps {
 
 export default function LocationMap({ region, familyMembers, accentColor }: LocationMapProps) {
   return (
-    <MapView
-      style={StyleSheet.absoluteFill}
-      region={region}
-      showsUserLocation={true}
-      showsCompass={true}
-    >
-      {familyMembers.map((member) => (
-        <Marker
-          key={member.id}
-          coordinate={{ latitude: member.location.lat, longitude: member.location.lng }}
-          title={member.name}
-        >
-          <View style={[styles.markerPin, { backgroundColor: accentColor }]}>
-            <Ionicons name="person" size={20} color="#FFF" />
-          </View>
-        </Marker>
-      ))}
-    </MapView>
+    <View style={StyleSheet.absoluteFill}>
+      <MapView
+        style={StyleSheet.absoluteFill}
+        region={region}
+        showsUserLocation={true}
+        showsCompass={true}
+      >
+        {familyMembers.map((member) => (
+          <Marker
+            key={member.id}
+            coordinate={{ latitude: member.location.lat, longitude: member.location.lng }}
+            title={member.name}
+          >
+            <View style={[styles.markerPin, { backgroundColor: accentColor }]}>
+              <Ionicons name="person" size={20} color="#FFF" />
+            </View>
+          </Marker>
+        ))}
+      </MapView>
+    </View>
   );
 }
 

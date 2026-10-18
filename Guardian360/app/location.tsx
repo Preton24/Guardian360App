@@ -90,32 +90,63 @@ export default function LocationScreen() {
       setSelectedMember(null);
   };
 
+  const handleBack = () => {
+    if (router.canGoBack()) {
+      router.back();
+    } else {
+      router.replace('/(tabs)');
+    }
+  };
+
   return (
     <View style={styles.container}>
       {/* Interactive OpenStreetMap on Web / Native Map on iOS & Android */}
-      <LocationMap
-        region={region}
-        familyMembers={familyMembers}
-        accentColor={theme.accent}
-      />
+      <View style={StyleSheet.absoluteFill}>
+        <LocationMap
+          region={region}
+          familyMembers={familyMembers}
+          accentColor={theme.accent}
+        />
+      </View>
 
       <SafeAreaView style={styles.safeArea} pointerEvents="box-none" edges={['top']}>
         {/* Floating Header Back Button */}
-        <View style={styles.header}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.iconButtonWrapper}>
-            <BlurView intensity={80} tint={theme.blurTint} style={styles.iconButton}>
-              <Feather name="arrow-left" size={24} color={theme.textPrimary} />
-            </BlurView>
+        <View style={styles.header} pointerEvents="box-none">
+          <TouchableOpacity
+            onPress={handleBack}
+            style={[
+              styles.backButton,
+              {
+                backgroundColor: isDark ? 'rgba(30, 41, 59, 0.92)' : 'rgba(255, 255, 255, 0.95)',
+                borderColor: isDark ? 'rgba(255, 255, 255, 0.15)' : 'rgba(0, 0, 0, 0.1)',
+              },
+            ]}
+            activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel="Go back"
+          >
+            <Feather name="arrow-left" size={20} color={theme.textPrimary} />
+            <Text style={[styles.backButtonText, { color: theme.textPrimary }]}>Back</Text>
           </TouchableOpacity>
         </View>
 
-        {/* Back Button - Shows when viewing family member's location */}
+        {/* Focus Location Button - Shows when viewing family member's location */}
         {!isViewingMyLocation && (
           <View style={styles.focusBackWrapper}>
-            <TouchableOpacity activeOpacity={0.8} onPress={focusMyLocation}>
-              <BlurView intensity={80} tint={theme.blurTint} style={styles.iconButton}>
-                <Feather name="crosshair" size={20} color={theme.accent} />
-              </BlurView>
+            <TouchableOpacity
+              activeOpacity={0.8}
+              onPress={focusMyLocation}
+              style={[
+                styles.iconButton,
+                {
+                  backgroundColor: isDark ? 'rgba(30, 41, 59, 0.92)' : 'rgba(255, 255, 255, 0.95)',
+                  borderColor: isDark ? 'rgba(255, 255, 255, 0.15)' : 'rgba(0, 0, 0, 0.1)',
+                },
+              ]}
+              accessibilityRole="button"
+              accessibilityLabel="Reset to my location"
+            >
+              <Feather name="crosshair" size={20} color={theme.accent} />
             </TouchableOpacity>
           </View>
         )}
@@ -218,33 +249,60 @@ const styles = StyleSheet.create({
     backgroundColor: '#000',
   },
   safeArea: {
-    flex: 1,
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 20,
   },
   header: {
     paddingHorizontal: 16,
     paddingTop: 16,
-    zIndex: 10,
+    zIndex: 30,
+    flexDirection: 'row',
+    alignItems: 'center',
   },
-  iconButtonWrapper: {
+  backButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 24,
+    borderWidth: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.18,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+  backButtonText: {
+    fontSize: 15,
+    fontWeight: '600',
+    letterSpacing: 0.2,
+  },
+  focusBackWrapper: {
+    position: 'absolute',
+    top: 76,
+    right: 16,
     width: 44,
     height: 44,
     borderRadius: 22,
-    overflow: 'hidden',
+    zIndex: 25,
   },
   iconButton: {
     width: '100%',
     height: '100%',
+    borderRadius: 22,
     justifyContent: 'center',
     alignItems: 'center',
-  },
-  focusBackWrapper: {
-    position: 'absolute',
-    top: 140,
-    left: 16,
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    overflow: 'hidden',
+    borderWidth: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 6,
+    elevation: 4,
   },
   bottomSheetContainer: {
     position: 'absolute',
@@ -254,6 +312,7 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: 32,
     borderTopRightRadius: 32,
     overflow: 'hidden', // to clip the BlurView
+    zIndex: 30,
   },
   bottomSheet: {
     paddingTop: 12,
