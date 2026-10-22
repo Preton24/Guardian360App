@@ -221,8 +221,7 @@ export default function HealthDataScreen() {
   };
 
   useEffect(() => {
-    if (!selectedUser) return;
-    const userId = selectedUser.id;
+    const userId = selectedUser?.id || 'a263f382-f9e2-4aba-b571-1c479d20a575';
     async function loadHealthData() {
       try {
         setLoading(true);
@@ -612,7 +611,7 @@ export default function HealthDataScreen() {
         <AppleHealthDetailModal
           visible={!!selectedDetailMetric}
           onClose={() => setSelectedDetailMetric(null)}
-          userId={selectedUser?.id || ''}
+          userId={selectedUser?.id || 'a263f382-f9e2-4aba-b571-1c479d20a575'}
           metricType={selectedDetailMetric.metricType}
           metricTitle={selectedDetailMetric.metricTitle}
           iconName={selectedDetailMetric.iconName}

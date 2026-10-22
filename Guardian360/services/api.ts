@@ -3,9 +3,16 @@ import Constants from 'expo-constants';
 
 // Automatically detect host IP from Web environment, Expo Metro bundler, or fallback to active LAN IP
 const getDevServerUrl = (): string => {
-  // 1. Highest priority: Explicit environment variable (Vercel, production, or .env)
-  if (process.env.EXPO_PUBLIC_API_URL) {
-    return process.env.EXPO_PUBLIC_API_URL.trim().replace(/\/+$/, '');
+  // 1. Explicit remote production/staging URL (e.g., Render, Vercel, Railway, not local IP)
+  const envUrl = process.env.EXPO_PUBLIC_API_URL?.trim().replace(/\/+$/, '');
+  if (
+    envUrl &&
+    !envUrl.includes('192.168.') &&
+    !envUrl.includes('10.') &&
+    !envUrl.includes('localhost') &&
+    !envUrl.includes('127.0.0.1')
+  ) {
+    return envUrl;
   }
 
   // 2. On Web during local development:
@@ -13,10 +20,11 @@ const getDevServerUrl = (): string => {
     if (typeof window !== 'undefined' && window.location?.hostname && window.location.hostname !== 'localhost' && !window.location.hostname.includes('vercel.app')) {
       return `http://${window.location.hostname}:5001`;
     }
-    return 'http://localhost:5001';
+    return envUrl || 'http://localhost:5001';
   }
 
-  // 3. Extract Metro host IP address dynamically across various Expo versions and platforms
+  // 3. Dynamic Metro bundler host detection:
+  // When running in Expo Go on physical device or simulator, hostUri is the EXACT LAN IP of your computer
   const hostUri =
     Constants.expoConfig?.hostUri ||
     (Constants as any).expoGoConfig?.debuggerHost ||
@@ -32,10 +40,15 @@ const getDevServerUrl = (): string => {
     }
   }
 
-  // 4. Fallback defaults for local development
+  // 4. Fallback to EXPO_PUBLIC_API_URL if specified
+  if (envUrl) {
+    return envUrl;
+  }
+
+  // 5. Fallback defaults for local development
   return Platform.select({
-    android: 'http://192.168.0.109:5001',
-    ios: 'http://192.168.0.109:5001',
+    android: 'http://192.168.0.106:5001',
+    ios: 'http://192.168.0.106:5001',
     default: 'http://localhost:5001',
   }) as string;
 };
