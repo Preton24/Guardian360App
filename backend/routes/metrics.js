@@ -247,45 +247,78 @@ function createMetricsRouter(prisma) {
         });
       }
 
-      // Calculate average
-      const countForAvg = nonZeroCount > 0 ? nonZeroCount : 1;
-      const calculatedAvg = Math.round(totalSum / countForAvg);
+      // True averages computed from stored data only (days with a reading)
+      const avgOf = (arr) => {
+        const nz = arr.filter((b) => b.value > 0);
+        return nz.length ? nz.reduce((a, b) => a + b.value, 0) / nz.length : 0;
+      };
+      const round1 = (n) => Math.round(n * 10) / 10;
+      const calculatedAvg = nonZeroCount > 0 ? round1(totalSum / nonZeroCount) : 0;
 
-      // Latest / Today's value
       const todayRecord = bars[bars.length - 1];
-      const todayVal = todayRecord ? todayRecord.value : (metricType === "steps" ? 468 : 0);
+      const todayVal = todayRecord ? todayRecord.value : 0;
 
-      // Highlights calculation
-      const avgByPoint = metricType === "steps" ? 887 : Math.round(calculatedAvg * 0.4);
-      const sevenDayAvg = metricType === "steps" ? 3658 : calculatedAvg;
+      // Typical value = average of the earlier days in range; 7-day avg = last 7 days
+      const priorAvg = round1(avgOf(bars.slice(0, -1)));
+      const sevenDayAvg = round1(avgOf(bars.slice(-7)));
+      const avgByPoint = priorAvg;
 
       const isLowerThanAverage = todayVal < avgByPoint;
-      let headline1 = `You’re walking less than you usually do by this point.`;
-      if (metricType === "heartRate") {
-        headline1 = `Resting heart rate remains within the healthy target range.`;
-      } else if (metricType === "spo2") {
-        headline1 = `Blood oxygen saturation is optimal and stable.`;
-      } else if (metricType === "activeEnergy") {
-        headline1 = `Active energy is pacing slightly below your typical daytime average.`;
-      } else if (!isLowerThanAverage) {
-        headline1 = `You're exceeding your typical pace for this time of day.`;
+      let headline1 = isLowerThanAverage
+        ? `Today is below your typical ${metricType} for this range.`
+        : `Today is at or above your typical ${metricType} for this range.`;
+      if (metricType === "steps") {
+        headline1 = isLowerThanAverage
+          ? `You’re walking less than you usually do by this point.`
+          : `You're exceeding your typical pace for this time of day.`;
       }
 
       const headline2 =
-        metricType === "steps"
-          ? `Over the last 7 days, you took an average of ${sevenDayAvg.toLocaleString()} steps.`
-          : `Over the last 7 days, your average ${metricType} was ${sevenDayAvg.toLocaleString()} ${unit}.`;
+        sevenDayAvg > 0
+          ? `Over the last 7 days, your average ${metricType} was ${sevenDayAvg.toLocaleString()} ${unit}.`
+          : `No ${metricType} readings recorded in the last 7 days.`;
+
+      // Chart buckets: D/W/M daily, 6M weekly averages, Y monthly averages
+      const fmtShort = (d) => `${d.getUTCDate()} ${d.toLocaleString("en-US", { month: "short", timeZone: "UTC" })}`;
+      const bucketize = (groups) =>
+        groups.map((g) => {
+          const nz = g.items.filter((b) => b.value > 0);
+          const v = nz.length ? nz.reduce((a, b) => a + b.value, 0) / nz.length : 0;
+          return { label: g.label, date: g.items[0].date, dateLabel: g.dateLabel, value: Math.round(v * 10) / 10 };
+        });
+      let chartBars = bars;
+      if (range === "6M") {
+        const groups = [];
+        for (let i = 0; i < bars.length; i += 7) {
+          const items = bars.slice(i, i + 7);
+          const s0 = new Date(items[0].date), e0 = new Date(items[items.length - 1].date);
+          groups.push({ items, label: fmtShort(s0), dateLabel: `${fmtShort(s0)} – ${fmtShort(e0)} ${e0.getUTCFullYear()}` });
+        }
+        chartBars = bucketize(groups);
+      } else if (range === "Y") {
+        const map = new Map();
+        for (const b of bars) {
+          const key = b.date.slice(0, 7);
+          if (!map.has(key)) {
+            const d = new Date(b.date);
+            const m = d.toLocaleString("en-US", { month: "short", timeZone: "UTC" });
+            map.set(key, { items: [], label: m, dateLabel: `${m} ${d.getUTCFullYear()}` });
+          }
+          map.get(key).items.push(b);
+        }
+        chartBars = bucketize([...map.values()]);
+      }
 
       res.json({
         metricType,
         range,
-        average: calculatedAvg > 0 ? calculatedAvg : (metricType === "steps" ? 3347 : todayVal),
+        average: calculatedAvg,
         unit,
         dateRangeLabel: formatDateRange(startDate, endDate),
         yMax,
         yMid,
         yMin,
-        bars: daysCount <= 14 ? bars : bars.slice(-14),
+        bars: chartBars,
         allBarsCount: bars.length,
         trend: "Unavailable",
         highlights: {

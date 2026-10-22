@@ -13,7 +13,7 @@ import {
 } from 'react-native';
 import { Feather, Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import Svg, { Path, Line, Circle, Rect } from 'react-native-svg';
-import { api, MetricDetailsResponse } from '@/services/api';
+import { api, MetricDetailsResponse, VoiceAnalysisRecord } from '@/services/api';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -34,6 +34,73 @@ interface AppleHealthDetailModalProps {
 
 type RangeOption = 'D' | 'W' | 'M' | '6M' | 'Y';
 
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+// '2026-10-20' -> '20 Oct 2026'
+const formatFullDate = (iso: string) => {
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return iso;
+  return `${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
+};
+
+const fmtNum = (n: number) =>
+  n.toLocaleString(undefined, { maximumFractionDigits: 1 });
+
+// Cognitive Health uses the same voice-assessment data as the Home screen's Cognitive Analysis card.
+async function loadCognitive(userId: string, range: RangeOption): Promise<MetricDetailsResponse> {
+  const res = await api.getUserCognitiveTrends(userId);
+  const all: VoiceAnalysisRecord[] = res.trends || [];
+  const maxBars = range === 'D' ? 1 : range === 'W' ? 7 : range === 'M' ? 14 : range === '6M' ? 30 : all.length;
+  const sel = all.slice(-maxBars);
+  const bars = sel.map((r) => {
+    const d = new Date(r.timestamp);
+    return {
+      label: `${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]}`,
+      date: d.toISOString().split('T')[0],
+      value: parseFloat(r.cognitiveHealthScore.toFixed(1)),
+    };
+  });
+  const avg = sel.length
+    ? parseFloat((sel.reduce((a, r) => a + r.cognitiveHealthScore, 0) / sel.length).toFixed(1))
+    : 0;
+  const latest = sel[sel.length - 1];
+  const first = sel[0];
+  let trend = 'Stable';
+  if (latest && first) {
+    if (latest.cognitiveHealthScore < first.cognitiveHealthScore - 4) trend = 'Downward (Mild Decline)';
+    else if (latest.cognitiveHealthScore > first.cognitiveHealthScore + 4) trend = 'Improving';
+  }
+  return {
+    metricType: 'cognitive',
+    range,
+    average: avg,
+    unit: '%',
+    dateRangeLabel: sel.length
+      ? `${formatFullDate(bars[0].date)} – ${formatFullDate(bars[bars.length - 1].date)}`
+      : 'No assessments',
+    yMax: 100,
+    yMid: 50,
+    yMin: 0,
+    bars,
+    allBarsCount: sel.length,
+    trend,
+    highlights: {
+      today: latest ? parseFloat(latest.cognitiveHealthScore.toFixed(1)) : 0,
+      averageByHour: avg,
+      sevenDayAverage: avg,
+      headline1:
+        latest?.cognitiveStatus === 'HIGH_RISK'
+          ? 'Elevated risk indicated by vocal acoustic and pause markers.'
+          : latest?.cognitiveStatus === 'MILD_COGNITIVE_IMPAIRMENT_RISK'
+          ? 'Mild cognitive variability detected in vocal biomarkers.'
+          : 'Voice cognitive biomarkers remain stable within normal parameters.',
+      headline2: sel.length
+        ? `Across your last ${sel.length} voice assessments, you averaged ${avg}%.`
+        : 'No voice assessments recorded yet.',
+    },
+  };
+}
+
 export default function AppleHealthDetailModal({
   visible,
   onClose,
@@ -51,6 +118,7 @@ export default function AppleHealthDetailModal({
   const [selectedRange, setSelectedRange] = useState<RangeOption>('W');
   const [metricData, setMetricData] = useState<MetricDetailsResponse | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
+  const [selectedBarIdx, setSelectedBarIdx] = useState<number | null>(null);
 
   // Add Data modal
   const [addModalOpen, setAddModalOpen] = useState<boolean>(false);
@@ -65,8 +133,12 @@ export default function AppleHealthDetailModal({
     async function loadData() {
       try {
         setLoading(true);
-        const data = await api.getMetricDetails(userId, metricType, selectedRange);
+        const data =
+          metricType === 'cognitive'
+            ? await loadCognitive(userId, selectedRange)
+            : await api.getMetricDetails(userId, metricType, selectedRange);
         if (isMounted) {
+          setSelectedBarIdx(null);
           setMetricData(data);
         }
       } catch (err: any) {
@@ -98,7 +170,10 @@ export default function AppleHealthDetailModal({
       setInputVal('');
       setAddModalOpen(false);
       // Reload chart
-      const updated = await api.getMetricDetails(userId, metricType, selectedRange);
+      const updated =
+        metricType === 'cognitive'
+          ? await loadCognitive(userId, selectedRange)
+          : await api.getMetricDetails(userId, metricType, selectedRange);
       setMetricData(updated);
     } catch (err: any) {
       Alert.alert('Save Error', err.message || 'Failed to save health entry.');
@@ -118,27 +193,40 @@ export default function AppleHealthDetailModal({
     return <Feather name={iconName as any} size={size} color={accentColor} />;
   };
 
-  const chartBars = metricData?.bars || [
-    { label: 'Fri', value: 3850, date: '2026-10-16' },
-    { label: 'Sat', value: 6820, date: '2026-10-17' },
-    { label: 'Sun', value: 5480, date: '2026-10-18' },
-    { label: 'Mon', value: 320, date: '2026-10-19' },
-    { label: 'Tue', value: 7040, date: '2026-10-20' },
-    { label: 'Wed', value: 310, date: '2026-10-21' },
-    { label: 'Thu', value: 468, date: '2026-10-22' },
-  ];
-
-  const yMax = metricData?.yMax || 10000;
-  const yMid = metricData?.yMid || 5000;
-  const avgVal = metricData?.average || 3347;
-  const dateRangeLabel = metricData?.dateRangeLabel || '16 – 22 Oct 2026';
-  const highlights = metricData?.highlights || {
-    today: 468,
-    averageByHour: 887,
-    sevenDayAverage: 3658,
-    headline1: "You're walking less than you usually do by this point.",
-    headline2: 'Over the last 7 days, you took an average of 3,658 steps.',
+  const chartBars = metricData?.bars || [];
+  const dataMax = chartBars.reduce((m, b) => Math.max(m, b.value), 0);
+  const baseMax = metricData?.yMax || 10000;
+  const niceMax = (v: number) => {
+    const pow = Math.pow(10, Math.floor(Math.log10(v)));
+    const n = v / pow;
+    return (n <= 1 ? 1 : n <= 2 ? 2 : n <= 5 ? 5 : 10) * pow;
   };
+  const yMax = dataMax > baseMax ? niceMax(dataMax) : baseMax;
+  const yMid = yMax === baseMax ? metricData?.yMid || yMax / 2 : yMax / 2;
+  const barCount = Math.max(1, chartBars.length);
+  const plotWidth = SCREEN_WIDTH - 32 - 50 - 8;
+  const slotWidth = plotWidth / barCount;
+  const barWidth =
+    barCount === 1 ? 72 : Math.max(3, Math.min(28, slotWidth * (barCount > 14 ? 0.62 : 0.55)));
+  const labelEvery = barCount <= 7 ? 1 : barCount <= 14 ? 2 : barCount <= 31 ? 5 : 4;
+  const avgVal = metricData?.average ?? 0;
+  const dateRangeLabel = metricData?.dateRangeLabel || '';
+  const highlights = metricData?.highlights || {
+    today: 0,
+    averageByHour: 0,
+    sevenDayAverage: 0,
+    headline1: 'No data recorded yet.',
+    headline2: 'No data recorded yet.',
+  };
+  const tooltipLabel = metricType === 'steps' ? 'TOTAL' : metricType === 'cognitive' ? 'SCORE' : 'AVERAGE';
+  const avgChartHeight = 64;
+  const avgScaleMax = Math.max(dataMax, avgVal, 1);
+  const rangeText = { D: 'today', W: 'last 7 days', M: 'last 30 days', '6M': 'last 6 months', Y: 'last year' }[selectedRange];
+  const avgHeadline =
+    metricType === 'cognitive' || chartBars.length === 0
+      ? highlights.headline2
+      : `Over the ${rangeText}, your average ${metricTitle.toLowerCase()} was ${fmtNum(avgVal)} ${unit}.`;
+  const selectedBar = selectedBarIdx !== null ? chartBars[selectedBarIdx] : null;
 
   const chartHeight = 180;
   const chartWidth = SCREEN_WIDTH - 64;
@@ -209,12 +297,24 @@ export default function AppleHealthDetailModal({
             <Text style={styles.statHeaderLabel}>AVERAGE</Text>
             <View style={styles.statValueRow}>
               <Text style={styles.statBigNumber}>
-                {avgVal.toLocaleString()}
+                {fmtNum(avgVal)}
               </Text>
               <Text style={styles.statUnitText}>{unit}</Text>
             </View>
             <Text style={styles.statDateRangeText}>{dateRangeLabel}</Text>
           </View>
+
+          {/* Tooltip for the tapped bar (day value) */}
+          {selectedBar && (
+            <View style={styles.tooltipBox}>
+              <Text style={styles.tooltipLabel}>{tooltipLabel}</Text>
+              <View style={styles.statValueRow}>
+                <Text style={styles.tooltipValue}>{fmtNum(selectedBar.value)}</Text>
+                <Text style={styles.tooltipUnit}>{unit}</Text>
+              </View>
+              <Text style={styles.tooltipDate}>{selectedBar.dateLabel || formatFullDate(selectedBar.date)}</Text>
+            </View>
+          )}
 
           {/* ========================================================= */}
           {/* MAIN APPLE HEALTH BAR CHART */}
@@ -246,23 +346,38 @@ export default function AppleHealthDetailModal({
                 <View style={[styles.barsContainer, { height: chartHeight }]}>
                   {chartBars.map((bar, idx) => {
                     const ratio = Math.min(1, Math.max(0, bar.value / yMax));
-                    const barHeight = Math.max(4, Math.round(ratio * chartHeight));
+                    const barHeight = bar.value > 0 ? Math.max(5, Math.round(ratio * chartHeight)) : 3;
+                    const isSel = selectedBarIdx === idx;
+                    const showLabel = idx % labelEvery === 0;
 
                     return (
-                      <View key={idx} style={styles.barItemColumn}>
+                      <TouchableOpacity
+                        key={idx}
+                        style={styles.barItemColumn}
+                        activeOpacity={0.8}
+                        onPress={() => setSelectedBarIdx(isSel ? null : idx)}
+                      >
+                        {isSel && (
+                          <View pointerEvents="none" style={[styles.selectedGuide, { height: chartHeight }]} />
+                        )}
                         <View style={[styles.barSlotWrap, { height: chartHeight }]}>
                           <View
                             style={[
                               styles.appleMainBar,
                               {
+                                width: barWidth,
                                 height: barHeight,
-                                backgroundColor: accentColor,
+                                borderRadius: Math.min(6, barWidth / 2),
+                                backgroundColor: bar.value > 0 ? accentColor : '#2C2C2E',
+                                opacity: selectedBarIdx === null || isSel ? 1 : 0.4,
                               },
                             ]}
                           />
                         </View>
-                        <Text style={styles.barDayLabel}>{bar.label}</Text>
-                      </View>
+                        <Text style={[styles.barDayLabel, { opacity: showLabel ? 1 : 0 }]} numberOfLines={1}>
+                          {bar.label}
+                        </Text>
+                      </TouchableOpacity>
                     );
                   })}
                 </View>
@@ -310,7 +425,7 @@ export default function AppleHealthDetailModal({
                 </View>
                 <View style={styles.legendValRow}>
                   <Text style={[styles.legendNumber, { color: accentColor }]}>
-                    {highlights.today.toLocaleString()}
+                    {fmtNum(highlights.today)}
                   </Text>
                   <Text style={styles.legendUnit}>{unit}</Text>
                 </View>
@@ -320,12 +435,12 @@ export default function AppleHealthDetailModal({
                 <View style={styles.legendTagRow}>
                   <View style={[styles.legendDot, { backgroundColor: '#8E8E93' }]} />
                   <Text style={[styles.legendTagText, { color: '#8E8E93' }]}>
-                    {metricType === 'cognitive' ? 'Baseline' : 'Average'}
+                    {metricType === 'cognitive' ? 'Average' : 'Typical'}
                   </Text>
                 </View>
                 <View style={styles.legendValRow}>
                   <Text style={[styles.legendNumber, { color: '#8E8E93' }]}>
-                    {highlights.averageByHour.toLocaleString()}
+                    {fmtNum(highlights.averageByHour)}
                   </Text>
                   <Text style={styles.legendUnit}>{unit}</Text>
                 </View>
@@ -413,63 +528,50 @@ export default function AppleHealthDetailModal({
               </Text>
             </View>
 
-            <Text style={styles.highlightHeadline}>{highlights.headline2}</Text>
+            <Text style={styles.highlightHeadline}>{avgHeadline}</Text>
 
             <Text style={styles.sevenDayBenchmarkLabel}>
-              {metricType === 'cognitive' ? 'Assessment Benchmark' : `Average ${metricTitle}`}
+              {metricType === 'cognitive' ? 'Assessment Average' : `Average ${metricTitle}`}
             </Text>
 
-            {/* Solid Horizontal Benchmark Line */}
-            <View style={[styles.benchmarkLine, { backgroundColor: accentColor }]} />
+            <View style={styles.legendValRow}>
+              <Text style={[styles.legendNumber, { color: '#FFFFFF' }]}>{fmtNum(avgVal)}</Text>
+              <Text style={styles.legendUnit}>{unit}</Text>
+            </View>
 
-            <View style={styles.sevenDayValueAndBgBarsRow}>
-              <View style={styles.legendValRow}>
-                <Text style={[styles.legendNumber, { color: '#FFFFFF' }]}>
-                  {highlights.sevenDayAverage.toLocaleString()}
-                </Text>
-                <Text style={styles.legendUnit}>{unit}</Text>
+            {/* Mini bars with the average line at its true height */}
+            <View style={[styles.avgChartBox, { height: avgChartHeight }]}>
+              <View style={styles.avgBarsRow}>
+                {chartBars.map((bar, i) => {
+                  const h = bar.value > 0 ? Math.max(3, Math.round((bar.value / avgScaleMax) * avgChartHeight)) : 2;
+                  return (
+                    <View key={i} style={styles.avgBarSlot}>
+                      <View
+                        style={{
+                          width: Math.max(3, Math.min(10, slotWidth * 0.5)),
+                          height: h,
+                          borderRadius: 3,
+                          backgroundColor: bar.value >= avgVal && bar.value > 0 ? accentColor : '#3A3A3C',
+                        }}
+                      />
+                    </View>
+                  );
+                })}
               </View>
-
-              {/* Subtle Daily Comparison Bars in Background */}
-              <View style={styles.bgBarsRow}>
-                {[0.4, 0.7, 0.55, 0.25, 0.85, 0.2, 0.45].map((h, i) => (
-                  <View
-                    key={i}
-                    style={[
-                      styles.bgMiniBar,
-                      {
-                        height: Math.round(h * 36),
-                        backgroundColor: '#3A3A3C',
-                      },
-                    ]}
-                  />
-                ))}
-              </View>
+              {avgVal > 0 && (
+                <View
+                  pointerEvents="none"
+                  style={[
+                    styles.avgLine,
+                    { bottom: Math.round((avgVal / avgScaleMax) * avgChartHeight), backgroundColor: accentColor },
+                  ]}
+                />
+              )}
             </View>
           </View>
 
-          <View style={{ height: 110 }} />
+          <View style={{ height: 40 }} />
         </ScrollView>
-
-        {/* Floating Apple Health Tab Bar (Summary / Sharing / Browse) */}
-        <View style={styles.floatingTabBarWrap} pointerEvents="box-none">
-          <View style={styles.floatingTabBarPill}>
-            <TouchableOpacity style={styles.tabBarItem} activeOpacity={0.8} onPress={onClose}>
-              <Ionicons name="heart" size={21} color="#0A84FF" />
-              <Text style={[styles.tabBarItemText, { color: '#0A84FF', fontWeight: '600' }]}>Summary</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity style={styles.tabBarItem} activeOpacity={0.8}>
-              <Ionicons name="people" size={21} color="#8E8E93" />
-              <Text style={styles.tabBarItemText}>Sharing</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity style={styles.tabBarItem} activeOpacity={0.8}>
-              <Ionicons name="grid" size={20} color="#8E8E93" />
-              <Text style={styles.tabBarItemText}>Browse</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
 
         {/* ========================================================= */}
         {/* ADD DATA MODAL */}
@@ -632,6 +734,7 @@ const styles = StyleSheet.create({
     position: 'relative',
     height: 220,
     paddingRight: 50,
+    paddingBottom: 6,
   },
   gridLineRow: {
     position: 'absolute',
@@ -654,7 +757,6 @@ const styles = StyleSheet.create({
   },
   barsContainer: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'flex-end',
     paddingRight: 8,
   },
@@ -669,11 +771,11 @@ const styles = StyleSheet.create({
   },
   appleMainBar: {
     width: 28,
-    borderTopLeftRadius: 4,
-    borderTopRightRadius: 4,
   },
   barDayLabel: {
-    fontSize: 12,
+    width: 56,
+    textAlign: 'center',
+    fontSize: 11,
     fontWeight: '500',
     color: '#8E8E93',
     marginTop: 8,
@@ -800,6 +902,28 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     marginTop: 8,
   },
+  avgChartBox: {
+    marginTop: 12,
+    position: 'relative',
+  },
+  avgBarsRow: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+  },
+  avgBarSlot: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+  },
+  avgLine: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    height: 2,
+    borderRadius: 1,
+    opacity: 0.9,
+  },
   benchmarkLine: {
     height: 3,
     borderRadius: 1.5,
@@ -876,41 +1000,23 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
 
-  // Floating Tab Bar (Apple Health 3-Tab Pill)
-  floatingTabBarWrap: {
+  selectedGuide: {
     position: 'absolute',
-    bottom: 24,
-    left: 0,
-    right: 0,
-    alignItems: 'center',
-    justifyContent: 'center',
+    top: 0,
+    width: 1,
+    backgroundColor: '#636366',
   },
-  floatingTabBarPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-around',
-    backgroundColor: 'rgba(30, 30, 32, 0.88)',
-    borderRadius: 36,
-    paddingHorizontal: 22,
-    paddingVertical: 10,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.12)',
-    shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.5,
-    shadowRadius: 16,
-    elevation: 10,
-    minWidth: 260,
-  },
-  tabBarItem: {
-    alignItems: 'center',
-    justifyContent: 'center',
+  tooltipBox: {
+    alignSelf: 'center',
+    backgroundColor: '#2C2C2E',
+    borderRadius: 12,
     paddingHorizontal: 16,
+    paddingVertical: 8,
+    marginBottom: 8,
+    minWidth: 170,
   },
-  tabBarItemText: {
-    fontSize: 10,
-    fontWeight: '500',
-    color: '#8E8E93',
-    marginTop: 3,
-  },
+  tooltipLabel: { fontSize: 12, fontWeight: '600', color: '#8E8E93' },
+  tooltipValue: { fontSize: 28, fontWeight: '700', color: '#FFFFFF' },
+  tooltipUnit: { fontSize: 15, fontWeight: '500', color: '#8E8E93', marginLeft: 6 },
+  tooltipDate: { fontSize: 13, fontWeight: '500', color: '#8E8E93', marginTop: 2 },
 });

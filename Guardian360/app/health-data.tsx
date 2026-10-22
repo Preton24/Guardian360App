@@ -193,6 +193,8 @@ export default function HealthDataScreen() {
   const [medicalRecords, setMedicalRecords] = useState<MedicalRecordItem[]>([]);
   const [summaryRefreshKey, setSummaryRefreshKey] = useState<number>(0);
   const [loading, setLoading] = useState<boolean>(true);
+  const [stepsToday, setStepsToday] = useState<number | null>(null);
+  const [stepsBars, setStepsBars] = useState<number[] | null>(null);
 
   // Expanded card state (null means all cards in sleek Apple Health overview)
   const [expandedCardId, setExpandedCardId] = useState<string | null>(null);
@@ -230,6 +232,15 @@ export default function HealthDataScreen() {
           api.getUserCognitiveTrends(userId).catch(() => null),
           api.getUserRecords(userId).catch(() => []),
         ]);
+        api
+          .getMetricDetails(userId, 'steps', 'W')
+          .then((m) => {
+            const vals = m.bars.map((b) => b.value);
+            setStepsToday(vals.length ? vals[vals.length - 1] : 0);
+            const max = Math.max(...vals, 1);
+            setStepsBars(vals.map((v) => v / max));
+          })
+          .catch(() => {});
         setFallRisks(fr);
         setReadings(sr);
         setCognitiveData(cog);
@@ -295,13 +306,14 @@ export default function HealthDataScreen() {
       ? cognitiveData.trends[cognitiveData.trends.length - 1]
       : null);
 
-  const cogScore = latestReport?.cognitiveHealthScore ?? cognitiveData?.averageHealthScore ?? 82.0;
+  const hasCogData = !!latestReport;
+  const cogScore = latestReport?.cognitiveHealthScore ?? 0;
   
   // Real cognitive mini bar heights from voice assessments (matches HomeScreen)
   const cogBarHeights =
     cognitiveData?.trends && cognitiveData.trends.length > 0
       ? cognitiveData.trends.slice(-7).map((t) => Math.min(1, Math.max(0.15, t.cognitiveHealthScore / 100)))
-      : [0.88, 0.87, 0.85, 0.84, 0.81, 0.79, 0.78];
+      : [0.15, 0.15, 0.15, 0.15, 0.15, 0.15, 0.15];
 
   const cogReportDateLabel = latestReport?.timestamp
     ? new Date(latestReport.timestamp).toLocaleDateString([], {
@@ -403,9 +415,9 @@ export default function HealthDataScreen() {
               iconColor="#FA4338"
               title="Steps"
               time={currentTime}
-              value="468"
+              value={stepsToday !== null ? stepsToday.toLocaleString() : '--'}
               unit="steps"
-              barHeights={[0.35, 0.75, 0.55, 0.25, 0.8, 0.15, 0.2]}
+              barHeights={stepsBars ?? undefined}
               isDark={isDark}
               theme={theme}
               onPress={() =>
@@ -416,59 +428,7 @@ export default function HealthDataScreen() {
                   iconFamily: 'Ionicons',
                   accentColor: '#FA4338',
                   unit: 'steps',
-                  currentValue: '468',
-                })
-              }
-            />
-
-            {/* ============================================================ */}
-            {/* 2. ACTIVE ENERGY (Matches Image Exactly) */}
-            {/* ============================================================ */}
-            <AppleHealthCard
-              icon={<Ionicons name="flame" size={17} color="#FA4338" />}
-              iconColor="#FA4338"
-              title="Active Energy"
-              time={currentTime}
-              value="12.6"
-              unit="kcal"
-              barHeights={[0.2, 0.65, 0.45, 0.2, 0.75, 0.15, 0.2]}
-              isDark={isDark}
-              theme={theme}
-              onPress={() =>
-                setSelectedDetailMetric({
-                  metricType: 'activeEnergy',
-                  metricTitle: 'Active Energy',
-                  iconName: 'flame',
-                  iconFamily: 'Ionicons',
-                  accentColor: '#FA4338',
-                  unit: 'kcal',
-                  currentValue: '12.6',
-                })
-              }
-            />
-
-            {/* ============================================================ */}
-            {/* 3. RESTING ENERGY (Matches Image Exactly) */}
-            {/* ============================================================ */}
-            <AppleHealthCard
-              icon={<Ionicons name="flame" size={17} color="#FA4338" />}
-              iconColor="#FA4338"
-              title="Resting Energy"
-              time={currentTime}
-              value="899"
-              unit="kcal"
-              barHeights={[0.85, 0.85, 0.85, 0.85, 0.85, 0.85, 0.95]}
-              isDark={isDark}
-              theme={theme}
-              onPress={() =>
-                setSelectedDetailMetric({
-                  metricType: 'restingEnergy',
-                  metricTitle: 'Resting Energy',
-                  iconName: 'flame',
-                  iconFamily: 'Ionicons',
-                  accentColor: '#FA4338',
-                  unit: 'kcal',
-                  currentValue: '899',
+                  currentValue: stepsToday ?? 0,
                 })
               }
             />
@@ -559,7 +519,7 @@ export default function HealthDataScreen() {
               iconColor="#AF52DE"
               title="Cognitive Health"
               time={cogReportDateLabel}
-              value={cogScore.toFixed(1)}
+              value={hasCogData ? cogScore.toFixed(1) : '--'}
               unit="%"
               barHeights={cogBarHeights}
               isDark={isDark}
@@ -572,7 +532,7 @@ export default function HealthDataScreen() {
                   iconFamily: 'MaterialCommunityIcons',
                   accentColor: '#AF52DE',
                   unit: '%',
-                  currentValue: cogScore.toFixed(1),
+                  currentValue: hasCogData ? cogScore.toFixed(1) : '--',
                 })
               }
             />

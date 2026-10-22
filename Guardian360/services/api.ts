@@ -547,6 +547,7 @@ export const api = {
 export interface MetricBarItem {
   label: string;
   date: string;
+  dateLabel?: string;
   value: number;
 }
 
