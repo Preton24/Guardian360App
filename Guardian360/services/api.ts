@@ -34,8 +34,8 @@ const getDevServerUrl = (): string => {
 
   // 4. Fallback defaults for local development
   return Platform.select({
-    android: 'http://192.168.0.103:5001',
-    ios: 'http://192.168.0.103:5001',
+    android: 'http://192.168.0.109:5001',
+    ios: 'http://192.168.0.109:5001',
     default: 'http://localhost:5001',
   }) as string;
 };
@@ -97,6 +97,8 @@ export interface SensorReadingItem {
   gx: number;
   gy: number;
   gz: number;
+  heartRate?: number | null;
+  spo2?: number | null;
 }
 
 export interface LatestSensorData {
@@ -143,20 +145,131 @@ export interface CognitiveTrendData {
   trends: VoiceAnalysisRecord[];
 }
 
+export type RecordType =
+  | 'CONSULTATION'
+  | 'PRESCRIPTION'
+  | 'LAB_REPORT'
+  | 'IMAGING'
+  | 'DISCHARGE'
+  | 'VACCINATION'
+  | 'OTHER';
 
-async function request<T>(endpoint: string, options?: RequestInit): Promise<T> {
+export interface MedicationItem {
+  id?: string;
+  recordId?: string;
+  userId?: string;
+  name: string;
+  genericName?: string | null;
+  strength?: string | null;
+  dosePattern?: string | null;
+  timing?: string | null;
+  durationDays?: number | null;
+  startDate?: string | null;
+  endDate?: string | null;
+  stoppedAt?: string | null;
+  record?: {
+    id?: string;
+    type?: RecordType;
+    doctorName?: string | null;
+    specialty?: string | null;
+    facility?: string | null;
+    recordDate?: string;
+  };
+}
+
+export interface RecordFileItem {
+  id: string;
+  recordId: string;
+  storageKey: string;
+  mimeType: string;
+  createdAt: string;
+}
+
+export interface MedicalRecordItem {
+  id: string;
+  userId: string;
+  type: RecordType;
+  recordDate: string;
+  doctorName?: string | null;
+  specialty?: string | null;
+  facility?: string | null;
+  diagnosis?: string | null;
+  complaints?: string | null;
+  notes?: string | null;
+  vitals?: any;
+  followUpDate?: string | null;
+  files: RecordFileItem[];
+  medications: MedicationItem[];
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface AllergyItem {
+  id: string;
+  userId: string;
+  substance: string;
+  reaction?: string | null;
+}
+
+export interface HealthSummaryItem {
+  id: string;
+  userId: string;
+  paragraph: string;
+  sections: {
+    activeMeds: Array<{ text: string; factIds: string[] }>;
+    allergies: Array<{ text: string; factIds: string[] }>;
+    recentEvents: Array<{ text: string; factIds: string[] }>;
+    flagsToVerify: Array<{ text: string; factIds: string[] }>;
+  };
+  citations?: Array<{ sentence: string; factIds: string[] }>;
+  inputHash: string;
+  model: string;
+  createdAt: string;
+  cached?: boolean;
+  noRecords?: boolean;
+}
+
+let activeCaretakerId: string | null = null;
+
+export function setActiveCaretakerId(id: string | null) {
+  activeCaretakerId = id;
+}
+
+export function getActiveCaretakerId(): string | null {
+  return activeCaretakerId;
+}
+
+async function request<T>(
+  endpoint: string,
+  options?: RequestInit,
+  customTimeoutMs: number = 10000
+): Promise<T> {
   const url = `${API_BASE_URL}${endpoint}`;
   try {
     const timeoutPromise = new Promise<never>((_, reject) => {
       setTimeout(() => {
-        reject(new Error(`Connection timed out to ${url}. Make sure your Express backend server is running on port 5001.`));
-      }, 10000);
+        reject(
+          new Error(
+            `Connection timed out to ${url}. Make sure your Express backend server is running on port 5001.`
+          )
+        );
+      }, customTimeoutMs);
     });
+
+    const isFormData = typeof FormData !== 'undefined' && options?.body instanceof FormData;
+
+    const authHeaders: Record<string, string> = activeCaretakerId
+      ? {
+          Authorization: `Bearer ${activeCaretakerId}`,
+          'x-caretaker-id': activeCaretakerId,
+        }
+      : {};
 
     const fetchPromise = (async () => {
       const response = await fetch(url, {
         headers: {
-          'Content-Type': 'application/json',
+          ...(!isFormData ? { 'Content-Type': 'application/json' } : {}),
+          ...authHeaders,
           ...options?.headers,
         },
         ...options,
@@ -304,4 +417,161 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ userId, ...data }),
     }),
+
+  // ==========================================
+  // Medical History Vault
+  // ==========================================
+  getUserRecords: (
+    userId: string,
+    filters?: { type?: string; from?: string; to?: string }
+  ) => {
+    const params = new URLSearchParams();
+    if (filters?.type && filters.type !== 'ALL') params.append('type', filters.type);
+    if (filters?.from) params.append('from', filters.from);
+    if (filters?.to) params.append('to', filters.to);
+    const queryString = params.toString() ? `?${params.toString()}` : '';
+    return request<MedicalRecordItem[]>(`/api/users/${userId}/records${queryString}`);
+  },
+
+  createRecord: (
+    userId: string,
+    data: {
+      type: RecordType;
+      recordDate: string;
+      doctorName?: string | null;
+      specialty?: string | null;
+      facility?: string | null;
+      diagnosis?: string | null;
+      complaints?: string | null;
+      notes?: string | null;
+      vitals?: any;
+      followUpDate?: string | null;
+      medications?: MedicationItem[];
+    }
+  ) =>
+    request<MedicalRecordItem>(`/api/users/${userId}/records`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  getRecord: (recordId: string) => request<MedicalRecordItem>(`/api/records/${recordId}`),
+
+  updateRecord: (
+    recordId: string,
+    data: Partial<{
+      type: RecordType;
+      recordDate: string;
+      doctorName: string | null;
+      specialty: string | null;
+      facility: string | null;
+      diagnosis: string | null;
+      complaints: string | null;
+      notes: string | null;
+      vitals: any;
+      followUpDate: string | null;
+      medications: MedicationItem[];
+    }>
+  ) =>
+    request<MedicalRecordItem>(`/api/records/${recordId}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+
+  deleteRecord: (recordId: string) =>
+    request<{ success: boolean; message: string }>(`/api/records/${recordId}`, {
+      method: 'DELETE',
+    }),
+
+  uploadRecordFile: async (recordId: string, fileUri: string, mimeType: string, fileName: string) => {
+    const formData = new FormData();
+    formData.append('file', {
+      uri: fileUri,
+      name: fileName,
+      type: mimeType,
+    } as any);
+
+    return request<RecordFileItem>(`/api/records/${recordId}/files`, {
+      method: 'POST',
+      body: formData,
+    });
+  },
+
+  getRecordFileUrl: (recordId: string, fileId: string) =>
+    `${API_BASE_URL}/api/records/${recordId}/files/${fileId}`,
+
+  getActiveMedications: (userId: string) =>
+    request<MedicationItem[]>(`/api/users/${userId}/medications/active`),
+
+  getUserAllergies: (userId: string) =>
+    request<AllergyItem[]>(`/api/users/${userId}/allergies`),
+
+  createAllergy: (userId: string, data: { substance: string; reaction?: string | null }) =>
+    request<AllergyItem>(`/api/users/${userId}/allergies`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  deleteAllergy: (userId: string, allergyId: string) =>
+    request<{ success: boolean; message: string }>(`/api/users/${userId}/allergies/${allergyId}`, {
+      method: 'DELETE',
+    }),
+
+  // ==========================================
+  // Doctor Summary (Extended 35s timeout)
+  // ==========================================
+  generateDoctorSummary: (userId: string) =>
+    request<HealthSummaryItem>(`/api/users/${userId}/summary`, { method: 'POST' }, 35000),
+
+  getUserSummaries: (userId: string) =>
+    request<HealthSummaryItem[]>(`/api/users/${userId}/summaries`),
+
+  createRemindersFromRecord: (recordId: string) =>
+    request<{ success: boolean; message: string; reminders: any[] }>(
+      `/api/records/${recordId}/create-reminders`,
+      { method: 'POST' }
+    ),
+
+  // ==========================================
+  // Daily Metrics & Apple Health Charts
+  // ==========================================
+  getMetricDetails: (userId: string, metricType: string, range: string = 'W') =>
+    request<MetricDetailsResponse>(`/api/users/${userId}/metrics/${metricType}?range=${range}`),
+
+  saveMetricReading: (userId: string, data: { metricType: string; value: number; date?: string }) =>
+    request<{ success: boolean; message: string; record: any }>(`/api/users/${userId}/metrics`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
 };
+
+export interface MetricBarItem {
+  label: string;
+  date: string;
+  value: number;
+}
+
+export interface MetricDetailsResponse {
+  metricType: string;
+  range: string;
+  average: number;
+  unit: string;
+  dateRangeLabel: string;
+  yMax: number;
+  yMid: number;
+  yMin: number;
+  bars: MetricBarItem[];
+  allBarsCount: number;
+  trend: string;
+  highlights: {
+    today: number;
+    averageByHour: number;
+    sevenDayAverage: number;
+    headline1: string;
+    headline2: string;
+    cumulativeCurve?: {
+      todayAtCurrentTime: number;
+      typicalAtCurrentTime: number;
+      typicalEndDay: number;
+    };
+  };
+}

@@ -30,6 +30,16 @@ enum ReminderCategory {
   HABIT
 }
 
+enum RecordType {
+  CONSULTATION
+  PRESCRIPTION
+  LAB_REPORT
+  IMAGING
+  DISCHARGE
+  VACCINATION
+  OTHER
+}
+
 // ===============================
 // CARETAKER
 // ===============================
@@ -51,19 +61,26 @@ model Caretaker {
 // ===============================
 
 model ElderlyUser {
-  id         String   @id @default(uuid())
-  name       String
-  age        Int
-  relation   String
-  contact    String
+  id                String   @id @default(uuid())
+  name              String
+  age               Int
+  relation          String
+  contact           String
+  dateOfBirth       DateTime? @db.Date
+  gender            String?
+  chronicConditions String[]  @default([])
 
-  caretakers CaretakerUser[]
-  readings   SensorReading[]
-  fallRisks  FallRisk[]
-  reminders  Reminder[]
+  caretakers        CaretakerUser[]
+  readings          SensorReading[]
+  fallRisks         FallRisk[]
+  reminders         Reminder[]
+  records           MedicalRecord[]
+  allergies         Allergy[]
+  summaries         HealthSummary[]
+  dailyMetrics      DailyHealthMetric[]
 
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 }
 
 // ===============================
@@ -86,7 +103,7 @@ model CaretakerUser {
 }
 
 // ===============================
-// RAW MPU6050 SENSOR DATA
+// RAW MPU6050 & SENSOR DATA
 // ===============================
 
 model SensorReading {
@@ -104,6 +121,10 @@ model SensorReading {
   gx        Float
   gy        Float
   gz        Float
+
+  // Vitals (Heart rate & SpO2)
+  heartRate Float?
+  spo2      Float?
 
   user      ElderlyUser @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -146,7 +167,7 @@ model Reminder {
 
   urgent      Boolean  @default(false)
   category    ReminderCategory
-  repeat      String?  @default("Never")
+  repeat      String?  @default("Never") @db.VarChar(50)
   completed   Boolean  @default(false)
 
   user        ElderlyUser @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -154,5 +175,100 @@ model Reminder {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
+  @@index([userId, date])
+}
+
+// ===============================
+// MEDICAL HISTORY VAULT
+// ===============================
+
+model MedicalRecord {
+  id           String       @id @default(uuid())
+  userId       String
+  user         ElderlyUser  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type         RecordType
+  recordDate   DateTime     @db.Date
+  doctorName   String?
+  specialty    String?      // "Cardiology", "General Physician"
+  facility     String?
+  diagnosis    String?      // as written by the doctor
+  complaints   String?
+  notes        String?
+  vitals       Json?        // BP, weight, sugar as written on the slip
+  followUpDate DateTime?    @db.Date
+  files        RecordFile[]
+  medications  Medication[]
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  @@index([userId, recordDate])
+}
+
+model Medication {
+  id           String        @id @default(uuid())
+  recordId     String
+  record       MedicalRecord @relation(fields: [recordId], references: [id], onDelete: Cascade)
+  userId       String        // denormalised for the active-meds query
+  name         String        // as written, e.g. "Telma 40"
+  genericName  String?       // "Telmisartan"
+  strength     String?       // "40 mg"
+  dosePattern  String?       // "1-0-1"
+  timing       String?       // "after food"
+  durationDays Int?
+  startDate    DateTime      @db.Date
+  endDate      DateTime?     @db.Date   // null = ongoing
+  stoppedAt    DateTime?     @db.Date
+
+  @@index([userId, endDate])
+}
+
+model RecordFile {
+  id         String        @id @default(uuid())
+  recordId   String
+  record     MedicalRecord @relation(fields: [recordId], references: [id], onDelete: Cascade)
+  storageKey String
+  mimeType   String
+  createdAt  DateTime      @default(now())
+}
+
+model Allergy {
+  id        String      @id @default(uuid())
+  userId    String
+  user      ElderlyUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+  substance String
+  reaction  String?
+}
+
+model HealthSummary {
+  id        String      @id @default(uuid())
+  userId    String
+  user      ElderlyUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+  paragraph String
+  sections  Json        // activeMeds, allergies, recentEvents, flagsToVerify, citations
+  inputHash String      // hash of the facts sent to the LLM; reuse summary if unchanged
+  model     String
+  createdAt DateTime    @default(now())
+}
+
+// ===============================
+// DAILY HEALTH METRICS (APPLE HEALTH CHARTS)
+// ===============================
+
+model DailyHealthMetric {
+  id                String      @id @default(uuid())
+  userId            String
+  user              ElderlyUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+  date              DateTime    @db.Date
+  steps             Int         @default(0)
+  activeKcal        Float       @default(0)
+  restingKcal       Float       @default(0)
+  avgHeartRate      Float?
+  avgSpo2           Float?
+  avgCognitiveScore Float?
+  hourlyData        Json?       // { steps: number[], cumulativeToday: number[], cumulativeAvg: number[] }
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+
+  @@unique([userId, date])
   @@index([userId, date])
 }

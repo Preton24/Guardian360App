@@ -56,3 +56,10 @@ npx expo start
 - **`Guardian360/`**: Cross-platform mobile app for caretakers and elderly users built with React Native and Expo Router.
 - **`requirements.txt`**: Root requirements file aggregating Python dependencies across all services.
 - **`REQUIREMENTS.md`**: Detailed specification of all system prerequisites and packages.
+
+
+npx expo logout
+npx expo login
+npx expo whoami
+
+everytime we have to update the ip address of macbook in arudino ide

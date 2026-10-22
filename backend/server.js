@@ -59,6 +59,14 @@ const prisma = new PrismaClient({ adapter });
 app.use(cors());
 app.use(express.json());
 
+// Medical history vault & Doctor summary router
+const { createMedicalHistoryRouter } = require("./routes/medicalHistory");
+app.use("/api", createMedicalHistoryRouter(prisma));
+
+// Daily health metrics router (Apple Health charts & storage)
+const { createMetricsRouter } = require("./routes/metrics");
+app.use("/api", createMetricsRouter(prisma));
+
 // Root and health status check endpoints
 app.get("/", (req, res) => {
   res.json({
@@ -893,6 +901,7 @@ app.get("/api/users/:userId/sensor-readings", async (req, res) => {
       orderBy: { timestamp: "desc" },
       take: 50
     });
+    console.log(`📊 [SENSOR DB FETCH] User: ${userId} | Retrieved ${readings.length} history records`);
     res.json(readings);
   } catch (error) {
     console.error("Error fetching sensor readings:", error.message || error);
@@ -917,6 +926,7 @@ app.post("/api/users/:userId/sensor-readings", async (req, res) => {
         gz: parseFloat(gz || 0)
       }
     });
+    console.log(`📥 [SENSOR DB STORED] User: ${userId} | Accel: (${ax}, ${ay}, ${az}) | Gyro: (${gx}, ${gy}, ${gz})`);
     res.status(201).json(reading);
   } catch (error) {
     console.error("Error creating sensor reading:", error);
@@ -1036,6 +1046,23 @@ const handlePostData = async (req, res) => {
       timestamp: new Date().toISOString()
     };
 
+    const timeStr = new Date().toLocaleTimeString();
+    const fmtAx = typeof ax === 'number' ? ax.toFixed(2) : ax;
+    const fmtAy = typeof ay === 'number' ? ay.toFixed(2) : ay;
+    const fmtAz = typeof az === 'number' ? az.toFixed(2) : az;
+    const fmtGx = typeof gx === 'number' ? gx.toFixed(1) : gx;
+    const fmtGy = typeof gy === 'number' ? gy.toFixed(1) : gy;
+    const fmtGz = typeof gz === 'number' ? gz.toFixed(1) : gz;
+
+    console.log(
+      `📡 [SENSOR RECEIVED] ${timeStr} | ` +
+      `HR: ${heartRate != null ? `${heartRate} bpm` : "--"} | ` +
+      `SpO2: ${spo2 != null ? `${spo2}%` : "--"} | ` +
+      `Fall: ${fallDetected ? "🚨 YES" : "NO"} | ` +
+      `Accel: (${fmtAx}, ${fmtAy}, ${fmtAz}) | ` +
+      `Gyro: (${fmtGx}, ${fmtGy}, ${fmtGz})`
+    );
+
     // If hardware detects a fall, immediately trigger emergency call and alert
     if (fallDetected) {
       const fallTimestamp = new Date();
@@ -1048,6 +1075,14 @@ const handlePostData = async (req, res) => {
       }).catch((callErr) => {
         console.error("Notice: Emergency call dispatch error:", callErr.message);
       });
+
+      // Auto-clear transient fall detected flag after 3.5 seconds so subsequent polls see normal state
+      setTimeout(() => {
+        if (latestSensorReading && latestSensorReading.fallDetected) {
+          latestSensorReading.fallDetected = false;
+          console.log("[Sensor] 🔄 Transient fall event auto-cleared after 3.5s");
+        }
+      }, 3500);
     }
 
     // Throttled persistence to database (or immediate on fall detection)
@@ -1074,7 +1109,9 @@ const handlePostData = async (req, res) => {
               az,
               gx,
               gy,
-              gz
+              gz,
+              heartRate: heartRate !== null ? heartRate : undefined,
+              spo2: spo2 !== null ? spo2 : undefined,
             }
           });
 
@@ -1111,6 +1148,21 @@ const handlePostData = async (req, res) => {
 };
 
 const handleGetData = (req, res) => {
+  const timeStr = new Date().toLocaleTimeString();
+  const hr = latestSensorReading.heartRate != null ? `${latestSensorReading.heartRate} bpm` : "--";
+  const spo2 = latestSensorReading.spo2 != null ? `${latestSensorReading.spo2}%` : "--";
+  const fall = latestSensorReading.fallDetected ? "🚨 YES" : "NO";
+  const ax = typeof latestSensorReading.ax === "number" ? latestSensorReading.ax.toFixed(2) : latestSensorReading.ax;
+  const ay = typeof latestSensorReading.ay === "number" ? latestSensorReading.ay.toFixed(2) : latestSensorReading.ay;
+  const az = typeof latestSensorReading.az === "number" ? latestSensorReading.az.toFixed(2) : latestSensorReading.az;
+
+  console.log(
+    `📤 [SENSOR FETCHED] ${timeStr} | ` +
+    `HR: ${hr} | ` +
+    `SpO2: ${spo2} | ` +
+    `Fall: ${fall} | ` +
+    `Accel: (${ax}, ${ay}, ${az})`
+  );
   res.json(latestSensorReading);
 };
 

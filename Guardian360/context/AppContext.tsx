@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { api, API_BASE_URL, Caretaker, ElderlyUser } from '@/services/api';
+import { api, API_BASE_URL, Caretaker, ElderlyUser, setActiveCaretakerId } from '@/services/api';
 
 interface AppContextType {
   caretaker: Caretaker | null;
@@ -72,6 +72,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         email: 'steve.rogers@example.com',
         contact: '+91 9876543210',
       }));
+      setActiveCaretakerId(currentCaretaker.id);
       setCaretakerState(currentCaretaker);
 
       // Ensure active caretaker is in list
@@ -94,6 +95,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, [loadData]);
 
   const setCaretaker = async (newCaretaker: Caretaker) => {
+    setActiveCaretakerId(newCaretaker.id);
     setCaretakerState(newCaretaker);
     await fetchUsersForCaretaker(newCaretaker.id);
   };

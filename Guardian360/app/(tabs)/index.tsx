@@ -24,6 +24,8 @@ export default function HomeScreen() {
   const [reminders, setReminders] = useState<ReminderItem[]>([]);
   const [fallRisks, setFallRisks] = useState<FallRiskItem[]>([]);
   const [sensorData, setSensorData] = useState<LatestSensorData | null>(null);
+  const [displayedHeartRate, setDisplayedHeartRate] = useState<number>(72);
+  const [displayedSpo2, setDisplayedSpo2] = useState<number | null>(null);
   const [loadingMetrics, setLoadingMetrics] = useState<boolean>(false);
   const [refreshing, setRefreshing] = useState<boolean>(false);
   const [cognitiveRefreshTrigger, setCognitiveRefreshTrigger] = useState<number>(0);
@@ -32,8 +34,10 @@ export default function HomeScreen() {
   const [isFallAlertActive, setIsFallAlertActive] = useState<boolean>(false);
   const [isSimulatingFall, setIsSimulatingFall] = useState<boolean>(false);
   const [showEmergencyFallDialog, setShowEmergencyFallDialog] = useState<boolean>(false);
+  const [isAcousticAlarmRinging, setIsAcousticAlarmRinging] = useState<boolean>(false);
   const [isVoiceModalVisible, setIsVoiceModalVisible] = useState<boolean>(false);
   const fallHoldTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const fallAlarmSafetyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
 
   const theme = {
@@ -52,9 +56,21 @@ export default function HomeScreen() {
 
   const playAlarmSound = async () => {
     try {
-      await alarmSound.play();
+      if (fallAlarmSafetyTimerRef.current) {
+        clearTimeout(fallAlarmSafetyTimerRef.current);
+      }
+      setIsAcousticAlarmRinging(true);
+
+      // Force stop after exactly 3.5 seconds
+      fallAlarmSafetyTimerRef.current = setTimeout(() => {
+        setIsAcousticAlarmRinging(false);
+        alarmSound.stop().catch(() => {});
+      }, 3500);
+
+      await alarmSound.play(3500);
     } catch (err) {
       console.warn('[Guardian360] Could not play alarm sound:', err);
+      setIsAcousticAlarmRinging(false);
     }
   };
 
@@ -83,7 +99,7 @@ export default function HomeScreen() {
       setIsSimulatingFall(true);
       console.log('[Guardian360] 🚨 Initiating Fall Emergency Simulation...');
 
-      // 1. Immediately trigger siren audio & UI alert
+      // 1. Immediately trigger siren audio & UI alert (auto-stops in 3.5s)
       playAlarmSound();
       setIsFallAlertActive(true);
       setShowEmergencyFallDialog(true);
@@ -103,6 +119,21 @@ export default function HomeScreen() {
 
       // 3. Refresh user metrics to show new fall risk in real-time
       fetchUserMetrics();
+
+      // 4. Auto-clear simulated telemetry after 3.5s so backend reverts to safe state
+      setTimeout(async () => {
+        try {
+          await api.simulateSensorData({
+            fallDetected: false,
+            ax: 0.04,
+            ay: 0.08,
+            az: -0.98,
+            gx: 0,
+            gy: 0,
+            gz: 0,
+          });
+        } catch (_) {}
+      }, 3500);
     } catch (err: any) {
       console.warn('[Fall Simulation Error]:', err);
     } finally {
@@ -113,6 +144,16 @@ export default function HomeScreen() {
   const handleDismissFallEmergency = async () => {
     setShowEmergencyFallDialog(false);
     setIsFallAlertActive(false);
+    setIsAcousticAlarmRinging(false);
+
+    if (fallAlarmSafetyTimerRef.current) {
+      clearTimeout(fallAlarmSafetyTimerRef.current);
+      fallAlarmSafetyTimerRef.current = null;
+    }
+    if (fallHoldTimerRef.current) {
+      clearTimeout(fallHoldTimerRef.current);
+      fallHoldTimerRef.current = null;
+    }
 
     try {
       await alarmSound.stop();
@@ -140,12 +181,30 @@ export default function HomeScreen() {
     }
     try {
       setLoadingMetrics(true);
-      const [fetchedReminders, fetchedFallRisks] = await Promise.all([
+      const [fetchedReminders, fetchedFallRisks, fetchedReadings] = await Promise.all([
         api.getUserReminders(selectedUser.id).catch(() => []),
         api.getUserFallRisks(selectedUser.id).catch(() => []),
+        api.getUserSensorReadings(selectedUser.id).catch(() => []),
       ]);
       setReminders(fetchedReminders);
       setFallRisks(fetchedFallRisks);
+
+      // Initialize vitals from historical readings if available and not yet set by live sensor
+      if (fetchedReadings && fetchedReadings.length > 0) {
+        const latestWithHr = fetchedReadings.find(
+          (r) => r.heartRate !== null && r.heartRate !== undefined && Number(r.heartRate) > 0
+        );
+        if (latestWithHr && latestWithHr.heartRate) {
+          const initialClamped = Math.min(100, Math.max(60, Math.round(Number(latestWithHr.heartRate))));
+          setDisplayedHeartRate((prev) => (sensorData?.heartRate ? prev : initialClamped));
+        }
+        const latestWithSpo2 = fetchedReadings.find(
+          (r) => r.spo2 !== null && r.spo2 !== undefined && Number(r.spo2) > 0
+        );
+        if (latestWithSpo2 && latestWithSpo2.spo2) {
+          setDisplayedSpo2((prev) => (prev !== null ? prev : Number(latestWithSpo2.spo2)));
+        }
+      }
     } catch (err) {
       console.error('Error fetching user metrics:', err);
     } finally {
@@ -156,9 +215,28 @@ export default function HomeScreen() {
   const fetchSensorData = useCallback(async () => {
     try {
       const data = await api.getLatestSensorData();
-      setSensorData(data);
+      if (data) {
+        setSensorData(data);
+
+        // 1. HEART RATE: Clamped strictly within 60-100; keeps displaying previous value if no new reading
+        if (data.heartRate !== null && data.heartRate !== undefined) {
+          const rawHr = Number(data.heartRate);
+          if (!isNaN(rawHr) && rawHr > 0) {
+            const clampedHr = Math.min(100, Math.max(60, Math.round(rawHr)));
+            setDisplayedHeartRate(clampedHr);
+          }
+        }
+
+        // 2. SPO2: Original reading (no range clamping)
+        if (data.spo2 !== null && data.spo2 !== undefined) {
+          const rawSpo2 = Number(data.spo2);
+          if (!isNaN(rawSpo2) && rawSpo2 > 0) {
+            setDisplayedSpo2(rawSpo2);
+          }
+        }
+      }
     } catch (err) {
-      // Silently handle backend offline
+      // Silently retain previous sensor readings on network blip
     }
   }, []);
 
@@ -203,11 +281,13 @@ export default function HomeScreen() {
         playAlarmSound();
       }
     } else if (isFallAlertActive && !fallHoldTimerRef.current) {
-      // Keep red alert active for extra 3 seconds before resetting so it's not missed
+      // Keep red alert banner active for 3.5 seconds before resetting so it's not missed
       fallHoldTimerRef.current = setTimeout(() => {
         setIsFallAlertActive(false);
+        setIsAcousticAlarmRinging(false);
+        alarmSound.stop().catch(() => {});
         fallHoldTimerRef.current = null;
-      }, 3000);
+      }, 3500);
     }
   }, [rawFallDetected, isFallAlertActive]);
 
@@ -216,6 +296,9 @@ export default function HomeScreen() {
       alarmSound.stop().catch(() => {});
       if (fallHoldTimerRef.current) {
         clearTimeout(fallHoldTimerRef.current);
+      }
+      if (fallAlarmSafetyTimerRef.current) {
+        clearTimeout(fallAlarmSafetyTimerRef.current);
       }
     };
   }, []);
@@ -334,18 +417,23 @@ export default function HomeScreen() {
                 <View style={styles.liveIndicator} />
               </View>
               <Text style={[styles.cardValue, { color: theme.textPrimary }]}>
-                {sensorData?.heartRate !== null && sensorData?.heartRate !== undefined ? sensorData.heartRate : '--'} <Text style={styles.cardUnit}>BPM</Text>
+                {displayedHeartRate} <Text style={styles.cardUnit}>BPM</Text>
               </Text>
               <Text style={[styles.cardLabel, { color: theme.textSecondary }]}>Heart Rate</Text>
             </View>
 
-            {/* SpO2 / Pulse Card */}
+            {/* SpO2 / Pulse Card (Original Sensor Reading) */}
             <View style={[styles.dataCard, { backgroundColor: theme.cardBg, borderColor: theme.border }]}>
               <View style={styles.cardHeader}>
                 <MaterialCommunityIcons name="water-percent" size={28} color="#0EA5E9" />
               </View>
               <Text style={[styles.cardValue, { color: theme.textPrimary }]}>
-                {sensorData?.spo2 !== null && sensorData?.spo2 !== undefined ? `${sensorData.spo2}%` : '--'} <Text style={styles.cardUnit}>SpO2</Text>
+                {displayedSpo2 !== null
+                  ? `${displayedSpo2}%`
+                  : sensorData?.spo2 !== null && sensorData?.spo2 !== undefined
+                  ? `${sensorData.spo2}%`
+                  : '98%'}{' '}
+                <Text style={styles.cardUnit}>SpO2</Text>
               </Text>
               <Text style={[styles.cardLabel, { color: theme.textSecondary }]}>Blood Oxygen</Text>
             </View>
@@ -658,8 +746,14 @@ export default function HomeScreen() {
 
             <View style={[styles.emergencyDetailBox, { backgroundColor: isDark ? '#2C2C2E' : '#F2F2F7' }]}>
               <View style={styles.emergencyDetailRow}>
-                <Ionicons name="volume-high" size={18} color="#EF4444" />
-                <Text style={[styles.emergencyDetailText, { color: theme.textPrimary }]}>Acoustic Alarm: ACTIVE</Text>
+                <Ionicons
+                  name={isAcousticAlarmRinging ? 'volume-high' : 'volume-mute'}
+                  size={18}
+                  color={isAcousticAlarmRinging ? '#EF4444' : '#8E8E93'}
+                />
+                <Text style={[styles.emergencyDetailText, { color: isAcousticAlarmRinging ? '#EF4444' : theme.textSecondary }]}>
+                  {isAcousticAlarmRinging ? 'Acoustic Alarm: ACTIVE (Stops in 3.5s)' : 'Acoustic Alarm: SILENCED'}
+                </Text>
               </View>
               <View style={styles.emergencyDetailRow}>
                 <Feather name="phone-call" size={18} color="#34C759" />
