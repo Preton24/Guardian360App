@@ -4,5 +4,8 @@
   },
   "files.watcherExclude": {
     "**/__pyrefly_virtual__/**": true
+  },
+  "files.associations": {
+    "*.ino": "arduino"
   }
 }
