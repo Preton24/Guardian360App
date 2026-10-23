@@ -5,13 +5,16 @@
 #include <algorithm>
 #include "MAX30105.h"
 #include "spo2_algorithm.h"
-
+#include <LiquidCrystal_I2C.h>
 #include "guardian360_rf_model.h"
 
 // ============================================================
 // GUARDIAN 360
-// ESP32 + MPU6050 + Random Forest
+// ESP32 + MPU6050 + MAX30102 + Random Forest + I2C LCD
 // ============================================================
+
+LiquidCrystal_I2C lcd(0x27, 16, 2);
+
 
 // -------------------- WiFi --------------------
 
@@ -19,7 +22,7 @@ const char* WIFI_SSID = "Abhinavvv";
 const char* WIFI_PASSWORD = "12345678*";
 
 // Laptop running Flask/FastAPI backend
-const char* SERVER_URL = "http://10.150.71.215:5000/data";
+const char* SERVER_URL = "http://10.215.92.215:5001/data";
 
 // -------------------- Physical SOS button --------------------
 // Wire a normally-open push button between GPIO 18 and GND.
@@ -1307,6 +1310,20 @@ void setup()
     Wire.setClock(400000);
 
     delay(100);
+
+    // --------------------------------------------------------
+    // I2C LCD: Guardian 360 startup screen
+    // --------------------------------------------------------
+
+    lcd.init();
+    lcd.backlight();
+    lcd.clear();
+
+    lcd.setCursor(2, 0);
+    lcd.print("GUARDIAN 360");
+
+    lcd.setCursor(3, 1);
+    lcd.print("Elderly Care");
 
 
     // --------------------------------------------------------
