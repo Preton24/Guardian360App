@@ -1,0 +1,1109 @@
+🛡️ Guardian 360 — Everything We’ve Done So Far
+
+The overall goal is:
+
+Build a reliable fall-detection system using an ESP32 + MPU6050, eventually combining rule-based detection and ML, with the final model capable of running on/alongside the ESP32.
+
+We are currently in the dataset + ML preparation stage. We have not trained the ML model yet.
+
+1. 🎯 Original Guardian 360 Goal
+
+Your hardware is:
+
+ESP32
+MPU6050
+3-axis accelerometer
+3-axis gyroscope
+
+The MPU6050 gives us:
+
+Accelerometer
+ax
+ay
+az
+
+Measures linear acceleration along X/Y/Z.
+
+Gyroscope
+gx
+gy
+gz
+
+Measures rotational velocity around X/Y/Z.
+
+So our basic sensor vector is:
+
+[ax, ay, az, gx, gy, gz]
+
+The goal is to detect:
+
+NORMAL ACTIVITY
+        ↓
+Possible fall
+        ↓
+Actual fall
+2. 🧠 First We Built a Rule-Based Fall Detector
+
+Before ML, we created a conventional fall detector using thresholds.
+
+The idea was that a fall usually has a sequence somewhat like:
+
+Normal movement
+      ↓
+Free fall / reduced acceleration
+      ↓
+Impact
+      ↓
+Body orientation changes
+      ↓
+Person becomes relatively still
+
+Initially, our firmware used a state machine:
+
+NORMAL
+   ↓
+IMPACT
+   ↓
+SETTLING
+   ↓
+ANALYZING
+   ↓
+FALL_CONFIRMED
+      or
+NOT_A_FALL
+3. ⚙️ Current ESP32 Sensor Configuration
+
+We configured the MPU6050 with:
+
+I²C
+SDA = GPIO 21
+SCL = GPIO 22
+Address = 0x68
+Accelerometer
+Range = ±8g
+Sensitivity = 4096 LSB/g
+Gyroscope
+Range = ±500 °/s
+Sensitivity = 65.5 LSB/(°/s)
+Digital Low Pass Filter
+DLPF = 0x03
+4. 📊 Features Used in the Rule-Based System
+
+Instead of looking at only one axis, we calculate the magnitude.
+
+Total acceleration
+accMag = √(ax² + ay² + az²)
+
+When the device is stationary, acceleration magnitude should be approximately:
+
+1g
+
+because gravity is being measured.
+
+Total gyroscope magnitude
+gyroMag = √(gx² + gy² + gz²)
+
+This tells us how much rotational movement is happening.
+
+5. 🚨 Initial Fall Rules
+
+We used thresholds such as:
+
+Impact
+acceleration >= 2.0g
+
+This detects a strong sudden acceleration.
+
+Stationary condition
+0.75g <= acceleration <= 1.25g
+
+This indicates the sensor is experiencing approximately normal gravity without large movement.
+
+Stillness
+gyro <= 30 °/s
+
+This helps determine whether the person has stopped moving after the potential impact.
+
+Timing
+
+We used:
+
+Settle period = 700 ms
+Analysis period = 2300 ms
+
+So the system doesn't immediately declare a fall after one large acceleration spike.
+
+6. 🖥️ Serial Output Was Also Improved
+
+Initially, printing every sensor reading made the Serial Monitor scroll extremely quickly.
+
+So we separated:
+
+Sensor sampling
+
+from
+
+Serial printing
+
+The sensor continues to operate at:
+
+20 Hz
+
+approximately:
+
+1 reading every 50 ms
+
+while serial output is limited to approximately:
+
+every 500 ms
+
+This makes debugging much easier.
+
+7. ⚠️ We Then Identified the Limitations of Threshold Detection
+
+A simple:
+
+if acceleration > 2g → FALL
+
+isn't reliable enough.
+
+For example:
+
+Normal activity can cause high acceleration
+
+Someone could:
+
+jump
+run
+sit down quickly
+drop the device
+hit something
+swing their arm
+
+and generate a high acceleration spike.
+
+So:
+
+High acceleration alone does NOT mean a fall.
+
+8. 🧩 We Improved the Concept to a Multi-Stage Fall Event
+
+We discussed using evidence from several stages:
+
+FREE FALL
+   ↓
+HIGH IMPACT
+   ↓
+ORIENTATION CHANGE
+   ↓
+POST-IMPACT STILLNESS
+
+Instead of:
+
+HIGH IMPACT → FALL
+
+we want:
+
+multiple pieces of evidence → FALL
+
+This is much more robust.
+
+9. 🕳️ Free-Fall Detection
+
+A potential fall may involve a period of reduced acceleration.
+
+For example:
+
+accMag < ~0.5–0.7g
+
+This can be used as supporting evidence.
+
+So a sequence like:
+
+0.4g
+0.5g
+0.6g
+     ↓
+2.8g
+3.1g
+     ↓
+1.0g
+1.0g
+1.0g
+
+is much more suspicious than:
+
+2.8g
+     ↓
+1.0g
+10. 🔄 Orientation Change
+
+Another useful feature is how much the person's body orientation changes.
+
+For example:
+
+Standing
+   ↓
+Fall
+   ↓
+Lying down
+
+The accelerometer can help estimate the gravity direction and therefore orientation.
+
+We discussed using something around:
+
+>45° orientation change
+
+as supporting evidence, rather than requiring it.
+
+Why?
+
+Because not every real fall produces exactly the same orientation change.
+
+11. 🧍 Post-Fall Stillness
+
+This is particularly useful.
+
+Suppose:
+
+High impact
+     ↓
+Person continues moving normally
+
+That's probably not a fall.
+
+But:
+
+High impact
+     ↓
+Person remains almost motionless
+
+is much more suspicious.
+
+So we proposed measuring:
+
+acceleration stability
+gyro stability
+percentage of samples satisfying stillness
+12. 🧮 We Also Discussed a Fall Score
+
+Rather than a single hard condition, we can assign points.
+
+For example:
+
+Event	Score
+Free fall	+2
+High impact	+2
+High rotational movement	+1
+Orientation change	+2
+Post-impact stillness	+3
+
+Then:
+
+score >= threshold
+        ↓
+     FALL
+
+For example:
+
+threshold = 6
+
+This is more flexible than requiring every condition.
+
+13. 🤖 Then We Decided to Add Machine Learning
+
+This is where the project became much more interesting.
+
+Instead of manually deciding:
+
+2g = fall
+45° = fall
+30°/s = still
+
+we can train a model using real movement data.
+
+The ML model learns patterns such as:
+
+acceleration pattern
++
+rotation pattern
++
+duration
++
+jerk
++
+orientation
++
+post-impact movement
+        ↓
+      FALL
+14. 🧠 Why We Don't Want to Train Directly on the ESP32
+
+We decided:
+
+Train the model on your PC first.
+
+The ESP32 is mainly the deployment target.
+
+The workflow becomes:
+
+Dataset
+   ↓
+Preprocessing
+   ↓
+Feature extraction
+   ↓
+Train ML model on PC
+   ↓
+Evaluate
+   ↓
+Optimize model
+   ↓
+Convert for ESP32
+   ↓
+TinyML / TensorFlow Lite Micro
+
+This is much easier than trying to train directly on the ESP32.
+
+15. 📚 We Looked for a Suitable Fall Dataset
+
+We considered several datasets.
+
+The important candidates were:
+
+SisFall
+
+Best match for our initial work because it contains:
+
+falls
+daily activities
+accelerometer data
+gyroscope data
+multiple subjects
+elderly subjects
+waist-mounted sensor setup
+
+The original SisFall work describes 38 volunteers and 19 ADLs + 15 fall types.
+
+MobiAct
+
+Also useful because it contains smartphone motion data involving:
+
+accelerometer
+gyroscope
+orientation
+UniMiB-SHAR
+
+Useful for acceleration-based fall/activity recognition, but it doesn't match our 6-axis accelerometer + gyro setup as closely.
+
+16. 🥇 We Chose SisFall First
+
+You downloaded:
+
+D:\Guardian360\SisFall_dataset
+
+Your project currently looks approximately like:
+
+D:\Guardian360\
+│
+├── models\
+│
+├── preprocessing\
+│
+├── results\
+│
+├── SisFall_dataset\
+│
+└── verify_sisfall.py
+17. 🔍 We Initially Had a Dataset Extraction Problem
+
+At first, the dataset folder contained things like:
+
+._*.txt
+
+which were macOS metadata files rather than the actual dataset.
+
+So our verification script didn't find the expected real data.
+
+We re-extracted the dataset correctly.
+
+18. ✅ Dataset Verification Worked
+
+After fixing extraction, we found:
+
+38 subject folders
+
+with:
+
+SA01 – SA23
+SE01 – SE15
+
+So:
+
+23 younger/adult subjects
+15 elderly subjects
+19. 📁 We Found the Actual Trial Files
+
+Your dataset contains:
+
+4505 real TXT trial files
+
+with approximately:
+
+1798 FALL trials
+2707 ADL/NORMAL trials
+
+Your copy therefore has 4505 actual data files.
+
+The dataset documentation commonly describes 4510 files, but we are using the files actually present in your copy rather than assuming the missing five.
+
+20. 📄 We Examined the Raw Data Format
+
+A typical file looks like:
+
+17,-179,-99,-18,-504,-352,76,-697,-279
+...
+
+Each row contains:
+
+9 values
+
+The dataset's raw channels are:
+
+1  2  3
+↓  ↓  ↓
+AX AY AZ
+
+4  5  6
+↓  ↓  ↓
+GX GY GZ
+
+7  8  9
+↓  ↓  ↓
+MMA accelerometer
+
+So:
+
+Columns 1–3 = ADXL345 accelerometer
+Columns 4–6 = ITG3200 gyroscope
+Columns 7–9 = MMA8451Q accelerometer
+21. 🎯 Important Decision: Which Sensors Do We Use?
+
+This was an important design decision.
+
+Your Guardian 360 hardware has:
+
+MPU6050
+ ↓
+3-axis accelerometer
++
+3-axis gyroscope
+
+SisFall has more raw sensor channels.
+
+Rather than immediately throwing all 9 channels into the model, we decided our first model will use:
+
+ADXL345
++
+ITG3200
+
+which gives:
+
+ax
+ay
+az
+gx
+gy
+gz
+
+So our model conceptually matches Guardian 360's:
+
+3-axis accelerometer
++
+3-axis gyroscope
+22. ⚠️ But the Sensors Aren't Identical
+
+This is important.
+
+We cannot say:
+
+SisFall ADXL345 = MPU6050
+
+They are different sensors.
+
+Even after converting to:
+
+g
+
+and:
+
+°/s
+
+there can still be differences in:
+
+noise
+bias
+sensitivity
+mounting
+sampling
+sensor characteristics
+
+Therefore:
+
+SisFall is our initial training source, but your own MPU6050 data will eventually be extremely important for final validation/fine-tuning.
+
+23. 🔧 We Created the Data Conversion Pipeline
+
+You then ran:
+
+preprocessing/convert_sisfall.py
+
+This script takes the raw TXT files and combines them into one CSV.
+
+The resulting file is:
+
+results/sisfall_raw.csv
+24. 📊 The Raw CSV Was Successfully Created
+
+The conversion processed:
+
+4505 files
+
+with:
+
+0 failures
+
+and:
+
+15,858,929 sensor rows
+
+That's a very large dataset, which is good for ML.
+
+25. 🗂️ Columns in sisfall_raw.csv
+
+The resulting CSV contains:
+
+ax
+ay
+az
+gx
+gy
+gz
+mma_ax
+mma_ay
+mma_az
+activity
+subject
+trial
+label
+source_file
+
+So each row knows:
+
+Sensor values
+ax ay az
+gx gy gz
+Additional raw sensor
+mma_ax mma_ay mma_az
+Metadata
+activity
+subject
+trial
+source_file
+ML label
+label
+26. 🏷️ We Converted Activities Into ML Labels
+
+The dataset contains activities like:
+
+D01
+D02
+...
+D19
+
+for daily activities.
+
+And:
+
+F01
+F02
+...
+F15
+
+for falls.
+
+For our first ML problem, we simplified that into:
+
+NORMAL
+FALL
+
+So we're initially doing binary classification:
+
+6-axis sensor window
+       ↓
+ ┌───────────────┐
+ │               │
+NORMAL          FALL
+27. 📈 Row-Level Label Distribution
+
+The converted dataset contained:
+
+NORMAL = 10,465,215 rows
+FALL   = 5,393,714 rows
+
+So there is a noticeable imbalance.
+
+But there's an important thing to understand:
+
+Rows are not the same as training examples.
+
+Eventually we'll convert the continuous sensor stream into windows.
+
+So the final class balance will depend on the number of windows generated.
+
+28. 🧪 Why We Don't Train Directly on Individual Rows
+
+A single sensor row:
+
+ax ay az gx gy gz
+
+doesn't tell us enough.
+
+For example:
+
+ax = 0.2g
+ay = 0.7g
+az = 0.6g
+
+could happen during many different situations.
+
+A fall is a temporal event.
+
+So we need:
+
+time
+↓
+↓
+↓
+↓
+↓
+↓
+sensor sequence
+
+rather than individual samples.
+
+29. 🪟 Our Next Major Step Is Windowing
+
+We plan to divide the sensor stream into fixed-length windows.
+
+Conceptually:
+
+Continuous sensor data
+
+────────────────────────────────────────────>
+
+[ WINDOW 1 ]
+          [ WINDOW 2 ]
+                    [ WINDOW 3 ]
+
+Each window becomes one ML example.
+
+30. ⏱️ The Window Will Represent a Short Movement
+
+We discussed approximately:
+
+2-second window
+
+This is a reasonable starting point because a fall happens over a short period.
+
+But we need to choose the final sampling rate carefully.
+
+SisFall is around:
+
+200 Hz
+
+while our current ESP32 prototype is:
+
+20 Hz
+
+and we discussed eventually increasing the sensor sampling rate.
+
+31. 📉 We Need a Common Sampling Rate
+
+There are several possibilities.
+
+Option A — Keep SisFall at 200 Hz
+
+2 seconds:
+
+200 × 2 = 400 samples
+
+That's a lot of input data.
+
+Option B — Use 50 Hz
+
+2 seconds:
+
+50 × 2 = 100 samples
+
+This is much easier for an ESP32.
+
+Option C — Use 100 Hz
+
+2 seconds:
+
+100 × 2 = 200 samples
+
+This is a good compromise.
+
+For Guardian 360, 100 Hz is currently a strong candidate, but we'll decide this explicitly before implementing the windowing stage.
+
+32. 🧹 We Are Currently Doing Sensor Normalization
+
+This is exactly what your computer is running right now.
+
+The script is:
+
+preprocessing/normalize_sisfall.py
+
+It takes:
+
+sisfall_raw.csv
+
+and converts raw sensor values into physical units.
+
+33. 📐 ADXL345 Conversion
+
+The SisFall documentation gives the conversion formula:
+
+Acceleration [g]
+=
+[(2 × Range) / 2^Resolution] × raw_value
+
+For ADXL345:
+
+Range = ±16g
+Resolution = 13-bit
+
+Therefore:
+
+scale = (2 × 16) / 2^13
+      = 32 / 8192
+      = 0.00390625 g/bit
+
+So:
+
+ax_g = ax × 0.00390625
+ay_g = ay × 0.00390625
+az_g = az × 0.00390625
+34. 🔄 ITG3200 Conversion
+
+For the gyroscope:
+
+Range = ±2000 °/s
+Resolution = 16-bit
+
+Therefore:
+
+scale = (2 × 2000) / 2^16
+      = 4000 / 65536
+      = 0.06103515625 °/s per bit
+
+So:
+
+gx_dps = gx × 0.06103515625
+gy_dps = gy × 0.06103515625
+gz_dps = gz × 0.06103515625
+35. ➕ We Also Calculate Magnitudes
+
+The normalized dataset will contain:
+
+Acceleration magnitude
+acc_mag_g =
+√(ax_g² + ay_g² + az_g²)
+Gyroscope magnitude
+gyro_mag_dps =
+√(gx_dps² + gy_dps² + gz_dps²)
+
+These are useful because they provide orientation-independent overall movement measures.
+
+36. 📄 The Expected Normalized Dataset
+
+The script is creating:
+
+results/sisfall_normalized.csv
+
+with:
+
+ax_g
+ay_g
+az_g
+
+gx_dps
+gy_dps
+gz_dps
+
+acc_mag_g
+gyro_mag_dps
+
+activity
+subject
+trial
+label
+source_file
+
+We're deliberately leaving the MMA accelerometer out of this first six-axis model.
+
+37. 🏗️ Where We Are Right Now
+
+So our pipeline currently looks like:
+
+                 SISFALL
+                    │
+                    ▼
+          ┌──────────────────┐
+          │ 4505 TXT files   │
+          └──────────────────┘
+                    │
+                    ▼
+        convert_sisfall.py
+                    │
+                    ▼
+          sisfall_raw.csv
+                    │
+                    ▼
+       normalize_sisfall.py
+                    │
+                    ▼
+      sisfall_normalized.csv
+                    │
+                    ▼
+            ⏭️ NEXT STEP
+              WINDOWING
+                    │
+                    ▼
+          FEATURE EXTRACTION
+                    │
+                    ▼
+           TRAIN / VALIDATE
+                    │
+                    ▼
+            TEST ON SUBJECTS
+                    │
+                    ▼
+             MODEL SELECTION
+                    │
+                    ▼
+          ESP32 DEPLOYMENT
+38. 🚨 One VERY Important ML Decision We Haven't Forgotten
+
+We must not randomly split individual rows/windows into train and test.
+
+Why?
+
+Suppose:
+
+Subject SA01
+    ↓
+Trial D01
+    ↓
+100 windows
+
+If we put:
+
+70 windows → training
+30 windows → testing
+
+the model has effectively seen almost the exact same person's movement in training.
+
+That can give us a falsely impressive accuracy.
+
+Instead:
+
+SUBJECTS
+   │
+   ├── TRAIN subjects
+   │
+   ├── VALIDATION subjects
+   │
+   └── TEST subjects
+
+This is called a subject-independent split.
+
+That is much more meaningful for Guardian 360.
+
+39. 🧪 Eventually We'll Test Generalization
+
+Our final question isn't:
+
+"Can the model memorize SisFall?"
+
+It is:
+
+"Can a model trained on different people recognize a fall from a person it hasn't seen before?"
+
+And eventually the even more important question:
+
+"Can a model trained using SisFall + our own data work with the actual MPU6050 on Guardian 360?"
+
+40. 🤖 Models We Plan to Try
+
+We aren't jumping straight into neural networks.
+
+We'll start with something strong and easy to debug:
+
+Random Forest
+
+Then potentially:
+
+Random Forest
+     ↓
+XGBoost / similar boosting model
+     ↓
+Small Neural Network
+     ↓
+TinyML / TensorFlow Lite Micro
+
+We can compare:
+
+accuracy
+precision
+recall
+F1
+confusion matrix
+false positives
+false negatives
+model size
+inference speed
+41. 🎯 Why False Positives Matter
+
+Imagine Guardian 360 says:
+
+FALL DETECTED!
+
+every time the person sits down quickly.
+
+That's bad.
+
+Likewise, if someone actually falls and the system says:
+
+NORMAL
+
+that's potentially much worse.
+
+So we especially care about:
+
+Fall recall
+
+How many actual falls did we detect?
+
+and:
+
+False-positive rate
+
+How often did we incorrectly call normal activity a fall?
+
+42. 🧠 Features We Eventually Want
+
+Instead of feeding only raw data into a traditional ML model, we'll likely calculate features such as:
+
+Acceleration
+mean(ax)
+std(ax)
+min(ax)
+max(ax)
+
+mean(ay)
+std(ay)
+...
+
+mean(acc_mag)
+std(acc_mag)
+min(acc_mag)
+max(acc_mag)
+Gyroscope
+mean(gx)
+std(gx)
+min(gx)
+max(gx)
+
+mean(gyro_mag)
+std(gyro_mag)
+...
+Dynamic features
+
+Such as:
+
+jerk
+peak acceleration
+peak gyro
+orientation change
+time between low acceleration and impact
+post-impact stillness
+
+These can make the model much better at understanding a fall as a sequence.
+
+43. 🧠 Eventually We Can Combine Rules + ML
+
+We don't necessarily have to choose:
+
+RULES
+or
+ML
+
+We can use:
+
+                MPU6050
+                   ↓
+             Sensor stream
+                   ↓
+        ┌──────────┴──────────┐
+        ↓                     ↓
+   Rule-based              ML model
+   detection               detection
+        │                     │
+        └──────────┬──────────┘
+                   ↓
+             Decision logic
+                   ↓
+             FALL / NORMAL
+
+This hybrid approach could be especially useful for Guardian 360.
+
+For example, rules can provide an inexpensive trigger:
+
+Something unusual happened
+        ↓
+Run ML analysis
+
+rather than constantly running the ML model.
+
+44. 🏁 The Final Guardian 360 Architecture We're Working Toward
+
+Eventually:
+
+              ┌───────────────┐
+              │    MPU6050    │
+              └───────┬───────┘
+                      │
+              ax ay az gx gy gz
+                      │
+                      ▼
+              ┌───────────────┐
+              │     ESP32     │
+              └───────┬───────┘
+                      │
+              preprocessing
+                      │
+                      ▼
+             ┌─────────────────┐
+             │ Fall Detection  │
+             │ Rules + ML      │
+             └────────┬────────┘
+                      │
+              ┌───────┴───────┐
+              │               │
+            NORMAL           FALL
+                              │
+                              ▼
+                         Alert system

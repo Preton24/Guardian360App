@@ -7,7 +7,6 @@ const { Pool } = require("pg");
 const { PrismaPg } = require("@prisma/adapter-pg");
 const { PrismaClient } = require("@prisma/client");
 require("dotenv").config();
-
 // Patch BigInt for JSON serialization
 BigInt.prototype.toJSON = function () {
   return this.toString();
