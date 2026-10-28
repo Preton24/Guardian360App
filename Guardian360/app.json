@@ -43,7 +43,14 @@
       "expo-web-browser",
       "expo-audio",
       "expo-sharing",
-      "expo-asset"
+      "expo-asset",
+      [
+        "expo-speech-recognition",
+        {
+          "microphonePermission": "Guardian360 uses the microphone to listen to your spoken answer during the voice check.",
+          "speechRecognitionPermission": "Guardian360 uses speech recognition to turn your spoken answer into text for the voice check."
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,

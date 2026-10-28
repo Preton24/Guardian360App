@@ -866,6 +866,109 @@ app.get("/api/users/:userId/fall-risks", async (req, res) => {
   }
 });
 
+// Fall timeline + time-of-day insights.
+// Hardware/simulated falls write one FALL_DETECTED row per sensor tick, so rows closer than
+// FALL_EVENT_GAP_MS are grouped into a single fall event.
+const FALL_EVENT_GAP_MS = 2 * 60 * 1000;
+
+function formatHour12(hour) {
+  const h = ((hour % 24) + 24) % 24;
+  const suffix = h >= 12 ? "PM" : "AM";
+  return `${h % 12 === 0 ? 12 : h % 12} ${suffix}`;
+}
+
+app.get("/api/users/:userId/fall-insights", async (req, res) => {
+  const { userId } = req.params;
+  const days = Math.min(Math.max(parseInt(req.query.days, 10) || 30, 1), 365);
+  // Same convention as JS getTimezoneOffset(): local = utc - offset (minutes)
+  const tzOffsetMinutes = Number.isFinite(Number(req.query.tzOffsetMinutes)) ? Number(req.query.tzOffsetMinutes) : 0;
+  const toLocal = (ms) => new Date(ms - tzOffsetMinutes * 60000);
+
+  try {
+    const rows = await prisma.fallRisk.findMany({
+      where: { userId, eventType: "FALL_DETECTED" },
+      orderBy: { timestamp: "asc" },
+      select: { timestamp: true },
+    });
+
+    const events = [];
+    let lastTs = null;
+    for (const r of rows) {
+      const t = r.timestamp.getTime();
+      if (lastTs === null || t - lastTs > FALL_EVENT_GAP_MS) events.push(t);
+      lastTs = t;
+    }
+
+    // Daily timeline for the selected range (local days, oldest first)
+    const todayLocal = toLocal(Date.now());
+    const dayKey = (d) => d.toISOString().slice(0, 10);
+    const timeline = [];
+    for (let i = days - 1; i >= 0; i--) {
+      const d = new Date(Date.UTC(todayLocal.getUTCFullYear(), todayLocal.getUTCMonth(), todayLocal.getUTCDate() - i));
+      timeline.push({ date: dayKey(d), count: 0 });
+    }
+    const timelineIdx = new Map(timeline.map((t, i) => [t.date, i]));
+    let eventsInRange = 0;
+    for (const t of events) {
+      const idx = timelineIdx.get(dayKey(toLocal(t)));
+      if (idx !== undefined) {
+        timeline[idx].count += 1;
+        eventsInRange += 1;
+      }
+    }
+
+    // Time of day uses every recorded fall so the pattern is stable
+    const hourly = Array(24).fill(0);
+    for (const t of events) hourly[toLocal(t).getUTCHours()] += 1;
+
+    // Busiest 3-hour window (wraps around midnight)
+    let peak = { startHour: 0, count: 0 };
+    for (let h = 0; h < 24; h++) {
+      const c = hourly[h] + hourly[(h + 1) % 24] + hourly[(h + 2) % 24];
+      if (c > peak.count) peak = { startHour: h, count: c };
+    }
+    const total = events.length;
+    const share = total > 0 ? Math.round((peak.count / total) * 100) : 0;
+    const peakWindow = total > 0
+      ? { startHour: peak.startHour, endHour: (peak.startHour + 3) % 24, count: peak.count, share, label: `${formatHour12(peak.startHour)} – ${formatHour12(peak.startHour + 3)}` }
+      : null;
+
+    // Trend: last 7 days vs the 7 days before
+    const dayMs = 24 * 60 * 60 * 1000;
+    const nowMs = Date.now();
+    const last7 = events.filter((t) => t > nowMs - 7 * dayMs).length;
+    const prev7 = events.filter((t) => t <= nowMs - 7 * dayMs && t > nowMs - 14 * dayMs).length;
+    const avgPerWeek = Math.round((eventsInRange / (days / 7)) * 10) / 10;
+    const trend = last7 > prev7 ? "rising" : last7 < prev7 ? "falling" : "steady";
+
+    let insight = "No falls recorded yet.";
+    let prediction = "No fall pattern to predict yet.";
+    if (peakWindow) {
+      insight = `Most falls (${share}%) were recorded between ${peakWindow.label}.`;
+      prediction = `Expect about ${avgPerWeek} fall${avgPerWeek === 1 ? "" : "s"} a week, most likely between ${peakWindow.label}. Extra supervision during that time can help. Falls are ${trend} compared with the previous week.`;
+    }
+
+    res.json({
+      days,
+      totalEvents: total,
+      eventsInRange,
+      avgPerWeek,
+      last7Days: last7,
+      previous7Days: prev7,
+      trend,
+      lastFallAt: events.length ? new Date(events[events.length - 1]).toISOString() : null,
+      timeline,
+      hourly,
+      peakWindow,
+      insight,
+      prediction,
+    });
+  } catch (error) {
+    console.error("Error computing fall insights:", error);
+    res.status(500).json({ error: "Failed to compute fall insights" });
+  }
+});
+
 // Post a fall risk event
 app.post("/api/users/:userId/fall-risks", async (req, res) => {
   const { userId } = req.params;
@@ -1066,14 +1169,19 @@ const handlePostData = async (req, res) => {
     if (fallDetected) {
       const fallTimestamp = new Date();
       console.log("🚨 REAL-TIME FALL DETECTED by Hardware MPU6050!");
-      triggerGuardianEmergencyCall({
-        userName: "the elderly user",
-        location: body.location || "Living Room",
-        riskLevel: "CRITICAL",
-        timestamp: fallTimestamp
-      }).catch((callErr) => {
-        console.error("Notice: Emergency call dispatch error:", callErr.message);
-      });
+      const isSimulated = body.simulated === true || body.simulated === "true";
+      if (isSimulated) {
+        console.log("🧪 Simulated fall: skipping emergency call dispatch");
+      } else {
+        triggerGuardianEmergencyCall({
+          userName: "the elderly user",
+          location: body.location || "Living Room",
+          riskLevel: "CRITICAL",
+          timestamp: fallTimestamp
+        }).catch((callErr) => {
+          console.error("Notice: Emergency call dispatch error:", callErr.message);
+        });
+      }
 
       // Auto-clear transient fall detected flag after 3.5 seconds so subsequent polls see normal state
       setTimeout(() => {
