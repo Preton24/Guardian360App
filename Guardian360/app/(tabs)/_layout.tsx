@@ -59,14 +59,14 @@ export default function TabLayout() {
         name="index"
         options={{
           title: 'Home',
-          tabBarIcon: ({ color }) => <IconSymbol size={26} name="house.fill" color={color} />,
+          tabBarIcon: ({ color }) => <IconSymbol size={26} name="house.fill" color={color as string} />,
         }}
       />
       <Tabs.Screen
         name="stats"
         options={{
           title: 'Stats',
-          tabBarIcon: ({ color }) => <Feather size={24} name="pie-chart" color={color} />,
+          tabBarIcon: ({ color }) => <Feather size={24} name="pie-chart" color={color as string} />,
         }}
       />
       <Tabs.Screen
@@ -79,7 +79,7 @@ export default function TabLayout() {
         name="profile"
         options={{
           title: 'Profiles',
-          tabBarIcon: ({ color }) => <Feather size={24} name="user" color={color} />,
+          tabBarIcon: ({ color }) => <Feather size={24} name="user" color={color as string} />,
         }}
       />
     </Tabs>
