@@ -6,6 +6,7 @@ import { useRouter, useFocusEffect } from 'expo-router';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useTheme } from '@/context/ThemeContext';
 import { useApp } from '@/context/AppContext';
+import Svg, { Circle, Path } from 'react-native-svg';
 import { api, ReminderItem } from '@/services/api';
 
 const { width } = Dimensions.get('window');
@@ -171,34 +172,29 @@ export default function StatsScreen() {
     const prevMonthLastDate = new Date(year, month, 0).getDate();
     const prevPaddingDays = Array.from({ length: firstDayIndex }, (_, i) => prevMonthLastDate - firstDayIndex + 1 + i);
 
-    // Highlighting days where reminders are completed in this month
-    const highlightedDays: number[] = [];
+    // Per-day completion: fraction of that day's activities that were checked
+    const dayStats: Record<string, { total: number; completed: number }> = {};
+    const bump = (dateStr: string, done: boolean) => {
+      if (!dayStats[dateStr]) dayStats[dateStr] = { total: 0, completed: 0 };
+      dayStats[dateStr].total += 1;
+      if (done) dayStats[dateStr].completed += 1;
+    };
     activeReminders.forEach((r) => {
-      // 1. Direct completion check
-      if (r.completed) {
-        const dateStr = getReminderDateStr(r);
-        if (dateStr) {
-          const [rYear, rMonth, rDay] = dateStr.split('-').map(Number);
-          if (rYear === year && rMonth === month + 1) {
-            if (!highlightedDays.includes(rDay)) {
-              highlightedDays.push(rDay);
-            }
-          }
-        }
-      }
-      // 2. Preserved prior completion for repeating routines
+      const dateStr = getReminderDateStr(r);
+      if (dateStr) bump(dateStr, !!r.completed);
+      // Repeating routines keep only their latest completion, recorded on updatedAt
       if (r.repeat && r.repeat !== 'Never' && r.updatedAt) {
         const updatedDateStr = r.updatedAt.split('T')[0];
-        if (updatedDateStr && updatedDateStr <= todayStr) {
-          const [uYear, uMonth, uDay] = updatedDateStr.split('-').map(Number);
-          if (uYear === year && uMonth === month + 1) {
-            if (!highlightedDays.includes(uDay)) {
-              highlightedDays.push(uDay);
-            }
-          }
+        if (updatedDateStr && updatedDateStr <= todayStr && updatedDateStr !== dateStr) {
+          bump(updatedDateStr, true);
         }
       }
     });
+    const getDayFraction = (day: number): number => {
+      const key = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+      const st = dayStats[key];
+      return st && st.total > 0 ? st.completed / st.total : 0;
+    };
 
     const now = new Date();
     const isCurrentMonth = now.getFullYear() === year && now.getMonth() === month;
@@ -232,22 +228,33 @@ export default function StatsScreen() {
 
           {/* Actual month days */}
           {daysInMonth.map((day) => {
-            const isHighlighted = highlightedDays.includes(day);
+            const fraction = getDayFraction(day);
+            const isFull = fraction >= 1;
             const isToday = isCurrentMonth && day === todayDate;
+            const R = 16;
+            const angle = fraction * 2 * Math.PI;
+            const wedge = `M ${R} ${R} L ${R} 0 A ${R} ${R} 0 ${fraction > 0.5 ? 1 : 0} 1 ${R + R * Math.sin(angle)} ${R - R * Math.cos(angle)} Z`;
 
             return (
               <View key={day} style={styles.calendarCell}>
-                <View
-                  style={[
-                    styles.dateCircle,
-                    isHighlighted && { backgroundColor: theme.primary, borderColor: theme.primary, borderWidth: 1 },
-                  ]}
-                >
+                <View style={styles.dateCircle}>
+                  {fraction > 0 && (
+                    <Svg width={32} height={32} style={StyleSheet.absoluteFill}>
+                      {isFull ? (
+                        <Circle cx={R} cy={R} r={R} fill={theme.primary} />
+                      ) : (
+                        <>
+                          <Circle cx={R} cy={R} r={R - 0.5} fill="none" stroke={theme.primary} strokeWidth={1} />
+                          <Path d={wedge} fill={theme.primary} fillOpacity={0.5} />
+                        </>
+                      )}
+                    </Svg>
+                  )}
                   <Text
                     style={[
                       styles.calendarDate,
                       { color: theme.calendarDay },
-                      isHighlighted && { color: '#FFFFFF', fontWeight: '700' },
+                      isFull && { color: '#FFFFFF', fontWeight: '700' },
                     ]}
                   >
                     {day}
