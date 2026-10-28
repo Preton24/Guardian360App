@@ -6,7 +6,6 @@ require("dotenv").config();
 const prisma = new PrismaClient({ adapter: new PrismaPg(new Pool({ connectionString: process.env.DATABASE_URL })) });
 
 const USER_ID = "a263f382-f9e2-4aba-b571-1c479d20a575"; // Tony Stark
-const TAG = "seed:routine-history";
 const ROUTINES = [
   { title: "Medicine 2", category: "MEDS", hour: 8, urgent: true },
   { title: "Park laughing club", category: "HABIT", hour: 6, urgent: false },
@@ -23,7 +22,15 @@ async function main() {
   const month = now.getMonth();
   const today = now.getDate();
 
-  await prisma.reminder.deleteMany({ where: { userId: USER_ID, notes: TAG } });
+  // Seeded rows are one-off ("Never") copies of the routines dated earlier this month
+  await prisma.reminder.deleteMany({
+    where: {
+      userId: USER_ID,
+      repeat: "Never",
+      title: { in: ROUTINES.map((r) => r.title) },
+      date: { gte: new Date(Date.UTC(year, month, 1)), lt: new Date(Date.UTC(year, month, today)) },
+    },
+  });
 
   const rows = [];
   const summary = [];
@@ -53,7 +60,6 @@ async function main() {
       rows.push({
         userId: USER_ID,
         title: r.title,
-        notes: TAG,
         date: new Date(`${dateStr}T00:00:00.000Z`),
         time: new Date(`1970-01-01T${String(r.hour).padStart(2, "0")}:00:00.000Z`),
         urgent: r.urgent,

@@ -296,6 +296,10 @@ function createMetricsRouter(prisma) {
         const todayFormatted = `${todayDate.getUTCDate()} ${todayDate.toLocaleString("en-US", { month: "short", timeZone: "UTC" })} ${todayDate.getUTCFullYear()}`;
 
         const dayBars = [];
+        const todayRecord = records.find(
+          (r) => new Date(r.date).toISOString().split("T")[0] === todayDStr
+        );
+        const todayStepsTotal = todayRecord && todayRecord.steps > 0 ? todayRecord.steps : 486;
 
         for (let hour = 0; hour < 24; hour++) {
           const hr12 = hour % 12 === 0 ? 12 : hour % 12;
@@ -321,7 +325,9 @@ function createMetricsRouter(prisma) {
               45, 46,        // 2 PM - 3 PM (afternoon walk)
               0, 0, 0, 0, 0, 0, 0, 0 // 4 PM - 11 PM
             ];
-            hourlyVal = hourlyDeltas[hour] || 0;
+            // Scale the hourly pattern to today's stored total (falls back to 486)
+            const weightSum = hourlyDeltas.reduce((a, b) => a + b, 0);
+            hourlyVal = Math.round(((hourlyDeltas[hour] || 0) / weightSum) * todayStepsTotal);
           } else if (normType === "heartrate" || normType === "heart_rate") {
             // Resting heart rate 60-100 BPM across the day
             const hrHourly = [
@@ -362,7 +368,7 @@ function createMetricsRouter(prisma) {
 
         let dayAvg = 0;
         if (normType === "steps") {
-          dayAvg = 486; // total steps
+          dayAvg = todayStepsTotal; // total steps
           yMax = 100;
           yMid = 50;
         } else if (normType === "heartrate" || normType === "heart_rate") {
@@ -392,7 +398,7 @@ function createMetricsRouter(prisma) {
           allBarsCount: 24,
           trend: "Unavailable",
           highlights: {
-            today: normType === "steps" ? 486 : dayAvg,
+            today: normType === "steps" ? todayStepsTotal : dayAvg,
             averageByHour: dayAvg,
             sevenDayAverage: dayAvg,
             headline1: normType === "steps"
@@ -400,7 +406,7 @@ function createMetricsRouter(prisma) {
               : `Your ${metricType} is stable across today's hourly readings.`,
             headline2: `Today's average ${metricType} is ${dayAvg} ${unit}.`,
             cumulativeCurve: {
-              todayAtCurrentTime: normType === "steps" ? 486 : dayAvg,
+              todayAtCurrentTime: normType === "steps" ? todayStepsTotal : dayAvg,
               typicalAtCurrentTime: dayAvg,
               typicalEndDay: dayAvg,
             },
