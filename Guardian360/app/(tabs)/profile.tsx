@@ -49,6 +49,7 @@ export default function ProfileScreen() {
   const [isAddCaretakerOpen, setIsAddCaretakerOpen] = useState(false);
   const [editingCaretaker, setEditingCaretaker] = useState<Caretaker | null>(null);
   const [isCaretakerManagerOpen, setIsCaretakerManagerOpen] = useState(false);
+  const [isCaretakerMenuOpen, setIsCaretakerMenuOpen] = useState(false);
 
   const [isAddUserOpen, setIsAddUserOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<ElderlyUser | null>(null);
@@ -285,23 +286,6 @@ export default function ProfileScreen() {
           <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>
             Caretaker ({allCaretakers.length})
           </Text>
-          <View style={{ flexDirection: 'row' }}>
-            <TouchableOpacity
-              style={[styles.headerActionBtn, { backgroundColor: theme.inputBg }]}
-              onPress={() => setIsCaretakerManagerOpen(true)}
-            >
-              <Feather name="users" size={14} color={theme.accent} style={{ marginRight: 4 }} />
-              <Text style={[styles.headerActionText, { color: theme.accent }]}>Manage</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[styles.headerActionBtn, { backgroundColor: theme.accent, marginLeft: 6 }]}
-              onPress={openAddCaretakerModal}
-            >
-              <Feather name="plus" size={14} color="#FFF" style={{ marginRight: 2 }} />
-              <Text style={[styles.headerActionText, { color: '#FFF' }]}>Add</Text>
-            </TouchableOpacity>
-          </View>
         </View>
 
         <View style={[styles.card, { backgroundColor: theme.cardBg, borderColor: theme.border }]}>
@@ -314,9 +298,6 @@ export default function ProfileScreen() {
                 <Text style={[styles.name, { color: theme.textPrimary }]}>
                   {caretaker?.name || 'Steve Rogers'}
                 </Text>
-                <View style={styles.activeBadge}>
-                  <Text style={styles.activeBadgeText}>ACTIVE CARETAKER</Text>
-                </View>
               </View>
               <Text style={[styles.detail, { color: theme.textSecondary }]}>
                 {caretaker?.email || 'steve.rogers@example.com'}
@@ -325,25 +306,12 @@ export default function ProfileScreen() {
                 {caretaker?.contact || '+91 9876543210'}
               </Text>
             </View>
-          </View>
-
-          <View style={[styles.separator, { backgroundColor: theme.border, marginVertical: 14 }]} />
-
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
             <TouchableOpacity
-              style={[styles.caretakerActionBtn, { backgroundColor: theme.inputBg }]}
-              onPress={() => caretaker && openEditCaretakerModal(caretaker)}
+              style={styles.cardMenuBtn}
+              onPress={() => setIsCaretakerMenuOpen(true)}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
             >
-              <Feather name="edit-2" size={16} color={theme.accent} />
-              <Text style={[styles.caretakerActionText, { color: theme.accent }]}>Edit Caretaker</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[styles.caretakerActionBtn, { backgroundColor: theme.inputBg }]}
-              onPress={() => setIsCaretakerManagerOpen(true)}
-            >
-              <Feather name="repeat" size={16} color={theme.purple} />
-              <Text style={[styles.caretakerActionText, { color: theme.purple }]}>Switch Caretaker</Text>
+              <Feather name="more-vertical" size={20} color={theme.textSecondary} />
             </TouchableOpacity>
           </View>
         </View>
@@ -607,6 +575,54 @@ export default function ProfileScreen() {
       {/* ========================================== */}
       {/* MODAL 3: CARETAKER MANAGER & SWITCHER */}
       {/* ========================================== */}
+      <Modal
+        visible={isCaretakerMenuOpen}
+        animationType="fade"
+        transparent
+        onRequestClose={() => setIsCaretakerMenuOpen(false)}
+      >
+        <TouchableWithoutFeedback onPress={() => setIsCaretakerMenuOpen(false)}>
+          <View style={styles.menuOverlay}>
+            <TouchableWithoutFeedback>
+              <View style={[styles.menuSheet, { backgroundColor: theme.cardBg, borderColor: theme.border }]}>
+                {[
+                  { icon: 'edit-2', label: 'Edit profile details', onPress: () => caretaker && openEditCaretakerModal(caretaker) },
+                  { icon: 'repeat', label: 'Switch caretaker', onPress: () => setIsCaretakerManagerOpen(true) },
+                  { icon: 'user-plus', label: 'Add caretaker', onPress: openAddCaretakerModal },
+                  { icon: 'users', label: 'Manage caretakers', onPress: () => setIsCaretakerManagerOpen(true) },
+                ].map((item) => (
+                  <TouchableOpacity
+                    key={item.label}
+                    style={styles.menuItem}
+                    onPress={() => {
+                      setIsCaretakerMenuOpen(false);
+                      item.onPress();
+                    }}
+                  >
+                    <Feather name={item.icon as any} size={18} color={theme.textPrimary} />
+                    <Text style={[styles.menuItemText, { color: theme.textPrimary }]}>{item.label}</Text>
+                  </TouchableOpacity>
+                ))}
+                <View style={[styles.separator, { backgroundColor: theme.border, marginVertical: 4 }]} />
+                <TouchableOpacity
+                  style={styles.menuItem}
+                  onPress={() => {
+                    setIsCaretakerMenuOpen(false);
+                    Alert.alert('Log out', 'Are you sure you want to log out?', [
+                      { text: 'Cancel', style: 'cancel' },
+                      { text: 'Log out', style: 'destructive', onPress: () => refreshData() },
+                    ]);
+                  }}
+                >
+                  <Feather name="log-out" size={18} color="#EF4444" />
+                  <Text style={[styles.menuItemText, { color: '#EF4444' }]}>Log out</Text>
+                </TouchableOpacity>
+              </View>
+            </TouchableWithoutFeedback>
+          </View>
+        </TouchableWithoutFeedback>
+      </Modal>
+
       <Modal visible={isCaretakerManagerOpen} animationType="slide" transparent>
         <KeyboardAvoidingView
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
@@ -887,17 +903,6 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     marginLeft: 4,
   },
-  headerActionBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 8,
-  },
-  headerActionText: {
-    fontSize: 12,
-    fontWeight: '700',
-  },
   card: {
     borderRadius: 20,
     borderWidth: 1,
@@ -933,6 +938,35 @@ const styles = StyleSheet.create({
     fontSize: 13,
     marginTop: 2,
   },
+  cardMenuBtn: {
+    padding: 4,
+    marginLeft: 8,
+  },
+  menuOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.35)',
+    justifyContent: 'flex-start',
+    alignItems: 'flex-end',
+    paddingTop: 150,
+    paddingHorizontal: 16,
+  },
+  menuSheet: {
+    minWidth: 220,
+    borderRadius: 16,
+    borderWidth: 1,
+    paddingVertical: 6,
+  },
+  menuItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  menuItemText: {
+    fontSize: 15,
+    fontWeight: '500',
+    marginLeft: 12,
+  },
   activeBadge: {
     backgroundColor: '#8B5CF6',
     paddingHorizontal: 6,
@@ -944,18 +978,6 @@ const styles = StyleSheet.create({
     color: '#FFF',
     fontSize: 10,
     fontWeight: '700',
-  },
-  caretakerActionBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 10,
-  },
-  caretakerActionText: {
-    fontSize: 13,
-    fontWeight: '600',
-    marginLeft: 6,
   },
   separator: {
     height: 1,

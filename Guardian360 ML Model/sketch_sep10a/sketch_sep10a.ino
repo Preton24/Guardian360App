@@ -22,7 +22,7 @@ const char* WIFI_SSID = "Abhinavvv";
 const char* WIFI_PASSWORD = "12345678*";
 
 // Laptop running Flask/FastAPI backend
-const char* SERVER_URL = "http://10.215.92.215:5001/data";
+const char* SERVER_URL = "http://172.20.1.91:5001/data";
 
 // -------------------- Physical SOS button --------------------
 // Wire a normally-open push button between GPIO 18 and GND.
