@@ -9,12 +9,28 @@ import {
   Platform,
   Dimensions,
   ScrollView,
+  TextInput,
+  Keyboard,
 } from 'react-native';
 import { Feather, MaterialCommunityIcons, Ionicons } from '@expo/vector-icons';
 import { BlurView } from 'expo-blur';
+import * as Speech from 'expo-speech';
+import * as Haptics from 'expo-haptics';
 import { api, VoiceAnalysisRecord } from '@/services/api';
 
 const { width } = Dimensions.get('window');
+
+// Native speech-to-text only exists in a development build; Expo Go lacks the native module,
+// so loading it is guarded and the modal falls back to typed / keyboard-dictated answers.
+let SpeechRecognitionModule: any = null;
+if (Platform.OS !== 'web') {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    SpeechRecognitionModule = require('expo-speech-recognition').ExpoSpeechRecognitionModule;
+  } catch (_) {}
+}
+const NATIVE_STT_AVAILABLE = !!SpeechRecognitionModule;
+const TYPED_FALLBACK = Platform.OS !== 'web' && !NATIVE_STT_AVAILABLE;
 
 interface Props {
   visible: boolean;
@@ -135,6 +151,7 @@ export function VoiceAssessmentModal({
   const audioContextRef = useRef<any>(null);
   const mediaStreamRef = useRef<any>(null);
   const audioAnalyserRef = useRef<any>(null);
+  const nativeSubsRef = useRef<{ remove: () => void }[]>([]);
 
   // Task reminder prompt matching voice_check_test.py exactly
   const reminderTitle = "Medicine Reminder";
@@ -238,12 +255,27 @@ export function VoiceAssessmentModal({
       } catch (e) {}
       audioContextRef.current = null;
     }
+    nativeSubsRef.current.forEach((sub) => {
+      try {
+        sub.remove();
+      } catch (e) {}
+    });
+    nativeSubsRef.current = [];
+    if (Platform.OS !== 'web') {
+      try {
+        Speech.stop();
+      } catch (e) {}
+    }
     if (typeof window !== 'undefined' && window.speechSynthesis) {
       window.speechSynthesis.cancel();
     }
   };
 
   const playBeepTone = () => {
+    if (Platform.OS !== 'web') {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+      return;
+    }
     if (typeof window !== 'undefined') {
       try {
         const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
@@ -312,6 +344,23 @@ export function VoiceAssessmentModal({
       };
 
       window.speechSynthesis.speak(utterance);
+    } else if (Platform.OS !== 'web') {
+      Speech.stop();
+      Speech.speak(promptSpeechText, {
+        language: 'en-US',
+        rate: 0.9,
+        pitch: 1.0,
+        onDone: () => {
+          playBeepTone();
+          setTimeout(() => {
+            beginListeningForUserResponse();
+          }, 500);
+        },
+        onError: () => {
+          playBeepTone();
+          beginListeningForUserResponse();
+        },
+      });
     } else {
       // Fallback timeout if SpeechSynthesis not available
       setTimeout(() => {
@@ -413,6 +462,49 @@ export function VoiceAssessmentModal({
       }
     }
 
+    // Native iOS/Android speech recognition (development build)
+    if (NATIVE_STT_AVAILABLE) {
+      try {
+        const perm = await SpeechRecognitionModule.requestPermissionsAsync();
+        if (!perm?.granted) {
+          setErrorMessage('Microphone and speech recognition permission is needed. Enable it in Settings.');
+          setPhase('idle');
+          return;
+        }
+
+        const resultSub = SpeechRecognitionModule.addListener('result', (event: any) => {
+          const trimmed = (event?.results?.[0]?.transcript || '').trim();
+          if (!trimmed) return;
+          transcriptRef.current = trimmed;
+          setTranscript(trimmed);
+          setUserHasSpoken(true);
+          setPhase('recording');
+
+          // When the user pauses for 2.5s after speaking, finish
+          if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
+          silenceTimerRef.current = setTimeout(() => {
+            evaluateAndSubmitResponse(trimmed);
+          }, 2500);
+        });
+        const errorSub = SpeechRecognitionModule.addListener('error', (e: any) => {
+          console.warn('Speech recognition warning:', e?.error, e?.message);
+        });
+        nativeSubsRef.current = [resultSub, errorSub];
+        speechRecognitionRef.current = { abort: () => SpeechRecognitionModule.abort() };
+
+        SpeechRecognitionModule.start({ lang: 'en-US', interimResults: true, continuous: true });
+
+        waveAnimRef.current = setInterval(() => {
+          setWaveHeights(Array.from({ length: 7 }, () => 8 + Math.floor(Math.random() * 32)));
+        }, 150);
+      } catch (e) {
+        console.warn('Could not start native speech recognition:', e);
+        setErrorMessage('Could not start speech recognition on this device.');
+        setPhase('idle');
+        return;
+      }
+    }
+
     // Live duration counter (up to 15 seconds)
     let elapsed = 0;
     timerRef.current = setInterval(() => {
@@ -420,7 +512,8 @@ export function VoiceAssessmentModal({
       setRecordingSeconds(elapsed);
 
       // Max recording timeout (15 seconds, matching voice_check_test.py)
-      if (elapsed >= 15) {
+      // Typed answers get no auto-submit; the user presses the button when done
+      if (elapsed >= 15 && !TYPED_FALLBACK) {
         evaluateAndSubmitResponse(transcriptRef.current);
       }
     }, 1000);
@@ -428,6 +521,7 @@ export function VoiceAssessmentModal({
 
   // Step 3: Accurate Evaluation and Machine Learning Inference
   const evaluateAndSubmitResponse = async (spokenTextOverride?: string) => {
+    Keyboard.dismiss();
     stopAllAudioProcesses();
 
     const finalText = (spokenTextOverride || transcriptRef.current || transcript).trim();
@@ -563,7 +657,12 @@ export function VoiceAssessmentModal({
             </TouchableOpacity>
           </View>
 
-          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.contentContainer}>
+          <ScrollView
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={styles.contentContainer}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="interactive"
+          >
             {/* Phase: Idle */}
             {phase === 'idle' && (
               <View style={styles.idleContainer}>
@@ -575,7 +674,7 @@ export function VoiceAssessmentModal({
                 </Text>
 
                 <View style={[styles.promptCard, { backgroundColor: theme.cardBg, borderColor: theme.border }]}>
-                  <Text style={[styles.promptLabel, { color: theme.accent }]}>TASK REMINDER SEQUENCE (voice_check_test.py)</Text>
+                  <Text style={[styles.promptLabel, { color: theme.accent }]}>Demo Routine Check</Text>
                   <Text style={[styles.promptTitleText, { color: theme.textPrimary }]}>
                     🔔 {reminderTitle}
                   </Text>
@@ -655,7 +754,40 @@ export function VoiceAssessmentModal({
                   ))}
                 </View>
 
+                {TYPED_FALLBACK && (
+                  <View style={[styles.transcriptBox, { backgroundColor: theme.cardBg, borderColor: theme.border }]}>
+                    <Text style={[styles.transcriptLabel, { color: theme.textSecondary }]}>
+                      VOICE INPUT NEEDS A DEVELOPMENT BUILD - TYPE OR DICTATE (KEYBOARD MIC) YOUR ANSWER:
+                    </Text>
+                    <TextInput
+                      style={[styles.transcriptText, { color: theme.textPrimary, minHeight: 48 }]}
+                      value={transcript}
+                      onChangeText={(t) => {
+                        transcriptRef.current = t;
+                        setTranscript(t);
+                        setUserHasSpoken(t.trim().length > 0);
+                      }}
+                      placeholder="e.g., I feel good and took my evening medicine."
+                      placeholderTextColor={theme.textSecondary}
+                      multiline
+                      autoFocus
+                      blurOnSubmit
+                      returnKeyType="done"
+                      onSubmitEditing={Keyboard.dismiss}
+                    />
+                    <TouchableOpacity
+                      onPress={Keyboard.dismiss}
+                      style={{ alignSelf: 'flex-end', flexDirection: 'row', alignItems: 'center', marginTop: 8 }}
+                      activeOpacity={0.7}
+                    >
+                      <Feather name="chevron-down" size={16} color={theme.accent} />
+                      <Text style={{ color: theme.accent, fontSize: 13, fontWeight: '600', marginLeft: 4 }}>Hide keyboard</Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
+
                 {/* Live Transcript Box */}
+                {!TYPED_FALLBACK && (
                 <View style={[styles.transcriptBox, { backgroundColor: theme.cardBg, borderColor: theme.border }]}>
                   <Text style={[styles.transcriptLabel, { color: theme.textSecondary }]}>
                     LIVE SPEECH RECOGNITION:
@@ -664,6 +796,7 @@ export function VoiceAssessmentModal({
                     {transcript || (userHasSpoken ? 'Transcribing your words...' : 'Speak now after the beep... e.g., "I feel good and took my evening medicine."')}
                   </Text>
                 </View>
+                )}
 
                 <TouchableOpacity
                   style={[styles.finishBtn, { backgroundColor: theme.cardBg, borderColor: theme.border }]}

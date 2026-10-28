@@ -100,6 +100,22 @@ export interface FallRiskItem {
   eventType: 'NORMAL' | 'ABNORMAL_GAIT' | 'FALL_RISK' | 'FALL_DETECTED';
 }
 
+export interface FallInsights {
+  days: number;
+  totalEvents: number;
+  eventsInRange: number;
+  avgPerWeek: number;
+  last7Days: number;
+  previous7Days: number;
+  trend: 'rising' | 'falling' | 'steady';
+  lastFallAt: string | null;
+  timeline: { date: string; count: number }[];
+  hourly: number[];
+  peakWindow: { startHour: number; endHour: number; count: number; share: number; label: string } | null;
+  insight: string;
+  prediction: string;
+}
+
 export interface SensorReadingItem {
   id: string;
   userId: string;
@@ -384,6 +400,10 @@ export const api = {
     }),
 
   // Fall Risks
+  getFallInsights: (userId: string, days: number = 30) =>
+    request<FallInsights>(
+      `/api/users/${userId}/fall-insights?days=${days}&tzOffsetMinutes=${new Date().getTimezoneOffset()}`
+    ),
   getUserFallRisks: (userId: string) => request<FallRiskItem[]>(`/api/users/${userId}/fall-risks`),
   createFallRisk: (
     userId: string,
@@ -405,7 +425,7 @@ export const api = {
       body: JSON.stringify(data),
     }),
   getLatestSensorData: () => request<LatestSensorData>('/data'),
-  simulateSensorData: (data: Partial<LatestSensorData> & { fallDetected?: boolean; location?: string }) =>
+  simulateSensorData: (data: Partial<LatestSensorData> & { fallDetected?: boolean; location?: string; simulated?: boolean }) =>
     request<{ success: boolean; data: LatestSensorData }>('/data', {
       method: 'POST',
       body: JSON.stringify(data),

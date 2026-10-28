@@ -16,6 +16,7 @@ import { useApp } from '@/context/AppContext';
 import {
   api,
   FallRiskItem,
+  FallInsights,
   SensorReadingItem,
   LatestSensorData,
   CognitiveTrendData,
@@ -25,6 +26,7 @@ import {
 import MedicalHistoryCard from '@/components/medical/MedicalHistoryCard';
 import DoctorSummaryCard from '@/components/medical/DoctorSummaryCard';
 import AppleHealthDetailModal from '@/components/medical/AppleHealthDetailModal';
+import FallInsightsModal from '@/components/medical/FallInsightsModal';
 
 interface SelectedMetricDetail {
   metricType: string;
@@ -201,6 +203,8 @@ export default function HealthDataScreen() {
 
   // Active Apple Health Detail Modal (null when on All Health Data main overview)
   const [selectedDetailMetric, setSelectedDetailMetric] = useState<SelectedMetricDetail | null>(null);
+  const [fallInsights, setFallInsights] = useState<FallInsights | null>(null);
+  const [isFallInsightsOpen, setIsFallInsightsOpen] = useState<boolean>(false);
 
   // Acoustic details toggle inside Cognitive card
   const [showAcousticDetails, setShowAcousticDetails] = useState<boolean>(false);
@@ -239,6 +243,10 @@ export default function HealthDataScreen() {
             const max = Math.max(...vals, 1);
             setStepsBars(vals.map((v) => v / max));
           })
+          .catch(() => {});
+        api
+          .getFallInsights(userId, 30)
+          .then(setFallInsights)
           .catch(() => {});
         setFallRisks(fr);
         setReadings(sr);
@@ -362,7 +370,6 @@ export default function HealthDataScreen() {
       : sensorData?.spo2 !== null && sensorData?.spo2 !== undefined
       ? sensorData.spo2
       : 98;
-  const isFall = displayedFall || Boolean(sensorData?.fallDetected);
 
   return (
     <SafeAreaView
@@ -485,29 +492,27 @@ export default function HealthDataScreen() {
             />
 
             {/* ============================================================ */}
-            {/* 6. WALKING STEADINESS & MOTION (MPU6050) */}
+            {/* 6. FALL EVENTS (timeline + time-of-day insights) */}
             {/* ============================================================ */}
             <AppleHealthCard
-              icon={<MaterialCommunityIcons name="shield-alert-outline" size={18} color="#FF9500" />}
+              icon={<MaterialCommunityIcons name="alert-octagon-outline" size={18} color="#FF9500" />}
               iconColor="#FF9500"
-              title="Walking Steadiness"
+              title="Fall Events"
               time={currentTime}
-              value={isFall ? 'Fall Alert' : 'Normal'}
-              unit={isFall ? 'CRITICAL' : 'gait'}
-              barHeights={[0.3, 0.45, 0.35, 0.5, 0.4, 0.3, 0.35]}
+              value={fallInsights ? String(fallInsights.last7Days) : '--'}
+              unit={fallInsights?.peakWindow ? `falls / 7d • peak ${fallInsights.peakWindow.label}` : 'falls / 7d'}
+              barHeights={
+                fallInsights && fallInsights.timeline.length >= 7
+                  ? (() => {
+                      const last7 = fallInsights.timeline.slice(-7).map((t) => t.count);
+                      const max = Math.max(1, ...last7);
+                      return last7.map((c) => Math.max(0.1, c / max));
+                    })()
+                  : [0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1]
+              }
               isDark={isDark}
               theme={theme}
-              onPress={() =>
-                setSelectedDetailMetric({
-                  metricType: 'motion',
-                  metricTitle: 'Walking Steadiness',
-                  iconName: 'shield-alert-outline',
-                  iconFamily: 'MaterialCommunityIcons',
-                  accentColor: '#FF9500',
-                  unit: isFall ? 'CRITICAL' : 'gait',
-                  currentValue: isFall ? 'Fall Alert' : 'Normal',
-                })
-              }
+              onPress={() => setIsFallInsightsOpen(true)}
             />
 
             {/* ============================================================ */}
@@ -605,6 +610,14 @@ export default function HealthDataScreen() {
 
         <View style={{ height: 40 }} />
       </ScrollView>
+
+      <FallInsightsModal
+        visible={isFallInsightsOpen}
+        onClose={() => setIsFallInsightsOpen(false)}
+        userId={selectedUser?.id || 'a263f382-f9e2-4aba-b571-1c479d20a575'}
+        isDark={isDark}
+        theme={theme}
+      />
 
       {/* Full-screen Apple Health Detail Graph Modal */}
       {selectedDetailMetric && (

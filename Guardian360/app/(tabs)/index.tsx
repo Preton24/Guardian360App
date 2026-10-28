@@ -102,10 +102,9 @@ export default function HomeScreen() {
       // 1. Immediately trigger siren audio & UI alert (auto-stops in 3.5s)
       playAlarmSound();
       setIsFallAlertActive(true);
-      setShowEmergencyFallDialog(true);
 
       // 2. Transmit critical sensor telemetry to backend
-      // Backend automatically registers CRITICAL FallRisk in DB and dispatches automated OmniDimension voice call to caretaker
+      // Backend registers CRITICAL FallRisk in DB; `simulated` stops it from dispatching a real voice call
       await api.simulateSensorData({
         fallDetected: true,
         ax: 0.18,
@@ -115,6 +114,7 @@ export default function HomeScreen() {
         gy: 230.0,
         gz: 110.0,
         location: 'Living Room (Simulated Test)',
+        simulated: true,
       });
 
       // 3. Refresh user metrics to show new fall risk in real-time
@@ -265,7 +265,10 @@ export default function HomeScreen() {
     return () => clearInterval(interval);
   }, [fetchSensorData]);
 
-  const latestFallRisk = fallRisks.length > 0 ? fallRisks[0] : null;
+  // Past fall events (CRITICAL / FALL_DETECTED) shouldn't keep the card red once the fall is over;
+  // while no fall is active, show the latest non-fall assessment instead.
+  const latestFallRisk =
+    fallRisks.find((r) => r.eventType !== 'FALL_DETECTED' && r.riskLevel !== 'CRITICAL' && r.riskLevel !== 'HIGH') ?? null;
 
   // Realtime check if live sensor hardware is currently reporting a fall
   const rawFallDetected = Boolean(sensorData?.fallDetected);
@@ -324,16 +327,9 @@ export default function HomeScreen() {
               <View style={{ flex: 1, marginLeft: 12 }}>
                 <Text style={styles.emergencyTopBannerTitle}>🚨 CRITICAL ALERT: FALL DETECTED!</Text>
                 <Text style={styles.emergencyTopBannerSub}>
-                  Hardware motion telemetry recorded an active impact fall. Tap to view emergency details.
+                  Hardware motion telemetry recorded an active impact fall.
                 </Text>
               </View>
-              <TouchableOpacity
-                style={styles.emergencyTopBannerBtn}
-                onPress={() => setShowEmergencyFallDialog(true)}
-                activeOpacity={0.8}
-              >
-                <Text style={styles.emergencyTopBannerBtnText}>VIEW</Text>
-              </TouchableOpacity>
             </View>
           </Animated.View>
         )}
@@ -576,7 +572,7 @@ export default function HomeScreen() {
               </View>
               <Text style={[styles.diagTitle, { color: theme.textPrimary }]}>Simulate Fall Emergency</Text>
               <Text style={[styles.diagSubtitle, { color: theme.textSecondary }]}>
-                Triggers acoustic alarm, registers critical fall telemetry & dispatches automated voice call to caretaker ({caretaker?.contact || '+91 7619359520'}).
+                Triggers acoustic alarm, registers critical fall telemetry & dispatches automated voice call to caretaker.
               </Text>
               <TouchableOpacity
                 style={[styles.simulateFallBtn, { opacity: isSimulatingFall ? 0.7 : 1 }]}
@@ -1078,18 +1074,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     marginTop: 2,
     lineHeight: 16,
-  },
-  emergencyTopBannerBtn: {
-    backgroundColor: '#FFFFFF',
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 12,
-    marginLeft: 8,
-  },
-  emergencyTopBannerBtnText: {
-    color: '#DC2626',
-    fontWeight: '800',
-    fontSize: 13,
   },
   sectionHeaderRow: {
     flexDirection: 'row',
