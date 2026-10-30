@@ -104,7 +104,7 @@ export default function HomeScreen() {
       setIsFallAlertActive(true);
 
       // 2. Transmit critical sensor telemetry to backend
-      // Backend registers CRITICAL FallRisk in DB; `simulated` stops it from dispatching a real voice call
+      // Backend registers CRITICAL FallRisk in DB and dispatches the Omnidim emergency call
       await api.simulateSensorData({
         fallDetected: true,
         ax: 0.18,
