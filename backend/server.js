@@ -1061,12 +1061,73 @@ function parseNum(val, fallback = null) {
   return isNaN(num) ? fallback : num;
 }
 
+// Short cooldown between dispatches while nobody has picked up; once a call is answered
+// the incident is marked "care taken" and further falls are ignored for a longer window.
+const EMERGENCY_CALL_COOLDOWN_MS = Number(process.env.EMERGENCY_CALL_COOLDOWN_MS) || 15000;
+const CARE_TAKEN_WINDOW_MS = Number(process.env.CARE_TAKEN_WINDOW_MS) || 120000;
+const CALL_STATUS_POLL_MS = 5000;
+const CALL_STATUS_POLL_MAX_MS = 180000;
+let lastEmergencyCallAt = 0;
+let careTakenUntil = 0;
+
+function omnidimKey() {
+  return (process.env.OMNIDIM_API_KEY || "").trim().replace(/^"|"$/g, "");
+}
+
+// Poll Omnidim call logs until the call for `requestId` ends; an answered (completed,
+// non-voicemail) call marks the incident as care taken.
+function watchEmergencyCall(requestId) {
+  const startedAt = Date.now();
+  const agentId = Number((process.env.OMNIDIM_AGENT_ID || "").toString().trim());
+
+  const poll = async () => {
+    if (Date.now() - startedAt > CALL_STATUS_POLL_MAX_MS) return;
+    try {
+      const res = await fetch(
+        `https://backend.omnidim.io/api/v1/calls/logs?pageno=1&pagesize=10&agentid=${agentId}`,
+        { headers: { Authorization: `Bearer ${omnidimKey()}` } }
+      );
+      const data = await res.json();
+      const log = (data.call_log_data || []).find(
+        (c) => c.call_request_id && Number(c.call_request_id.id) === Number(requestId)
+      );
+      if (log) {
+        const status = String(log.call_status || "").toLowerCase();
+        if (status === "completed" && !log.is_voicemail) {
+          careTakenUntil = Date.now() + CARE_TAKEN_WINDOW_MS;
+          console.log("✅ Emergency call answered — marked as Care Taken");
+          return;
+        }
+        if (["no-answer", "busy", "failed", "completed"].includes(status)) {
+          console.log(`📞 Emergency call ended unanswered (${status}); retry allowed on next fall`);
+          return;
+        }
+      }
+    } catch (err) {
+      console.error("Notice: call status poll error:", err.message);
+    }
+    setTimeout(poll, CALL_STATUS_POLL_MS);
+  };
+  setTimeout(poll, CALL_STATUS_POLL_MS);
+}
+
 async function triggerGuardianEmergencyCall({
   userName,
   location,
   riskLevel,
   timestamp
 }) {
+  const now = Date.now();
+  if (now < careTakenUntil) {
+    console.log("🛡️ Care already taken for this incident, skipping emergency call");
+    return;
+  }
+  if (now - lastEmergencyCallAt < EMERGENCY_CALL_COOLDOWN_MS) {
+    console.log("📞 Emergency call dispatched moments ago, skipping duplicate");
+    return;
+  }
+  lastEmergencyCallAt = now;
+
   try {
     const apiKey = (process.env.OMNIDIM_API_KEY || "").trim().replace(/^"|"$/g, "");
     const agentId = Number((process.env.OMNIDIM_AGENT_ID || "").toString().trim());
@@ -1099,12 +1160,15 @@ async function triggerGuardianEmergencyCall({
 
     if (!response.ok) {
       console.error("❌ OmniDimension call failed:", result);
+      lastEmergencyCallAt = 0;
       return;
     }
 
     console.log("📞 Guardian 360 emergency call dispatched:", result);
+    if (result.requestId) watchEmergencyCall(result.requestId);
   } catch (error) {
     console.error("❌ OmniDimension error:", error.message);
+    lastEmergencyCallAt = 0;
   }
 }
 
@@ -1169,19 +1233,14 @@ const handlePostData = async (req, res) => {
     if (fallDetected) {
       const fallTimestamp = new Date();
       console.log("🚨 REAL-TIME FALL DETECTED by Hardware MPU6050!");
-      const isSimulated = body.simulated === true || body.simulated === "true";
-      if (isSimulated) {
-        console.log("🧪 Simulated fall: skipping emergency call dispatch");
-      } else {
-        triggerGuardianEmergencyCall({
-          userName: "the elderly user",
-          location: body.location || "Living Room",
-          riskLevel: "CRITICAL",
-          timestamp: fallTimestamp
-        }).catch((callErr) => {
-          console.error("Notice: Emergency call dispatch error:", callErr.message);
-        });
-      }
+      triggerGuardianEmergencyCall({
+        userName: "the elderly user",
+        location: body.location || "Living Room",
+        riskLevel: "CRITICAL",
+        timestamp: fallTimestamp
+      }).catch((callErr) => {
+        console.error("Notice: Emergency call dispatch error:", callErr.message);
+      });
 
       // Auto-clear transient fall detected flag after 3.5 seconds so subsequent polls see normal state
       setTimeout(() => {
